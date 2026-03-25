@@ -55,8 +55,10 @@ Route::middleware(['auth', 'role:admin'])
         Route::get('meta-2/debug-cf', function () {
             $service = new \App\Services\Meta2Service();
             $ids     = $service->getTelefoniaIds(3, 2026);
-            $firstId = $ids[0] ?? null;
-            if (!$firstId) return response()->json(['error' => 'No hay tickets']);
+
+            // ✅ ID fijo para prueba
+            $firstId = '81010fd2-4ca8-f011-8e61-000d3a4fe16d';
+
             $fields  = $service->debugCustomFields($firstId);
             return response()->json($fields);
         })->name('meta-2.debug-cf');

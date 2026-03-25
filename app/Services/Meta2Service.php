@@ -10,6 +10,18 @@ class Meta2Service
     protected string $baseUrl;
     protected string $authHeader;
 
+    /**
+     * IDs de los campos que necesitamos del PDF
+     */
+    protected array $requiredFieldIds = [
+        'cb7251d4-ad9a-ee11-bea0-0022482ddcd2',  // Causa
+        'cc7251d4-ad9a-ee11-bea0-0022482ddcd2',  // Ubicación
+        'ce7251d4-ad9a-ee11-bea0-0022482ddcd2',  // Detalle - Reporte 2
+        'cf7251d4-ad9a-ee11-bea0-0022482ddcd2',  // Reporte 1
+        'c096b751-9cd1-ee11-85f7-00224835853a',  // Provincia
+        '7b1b9b04-9dd1-ee11-85f7-00224835853a',  // Telefonia 
+    ];
+
     public function __construct()
     {
         $cred = MspCredential::latest()->first();
@@ -39,7 +51,7 @@ class Meta2Service
     /**
      * Paso 1 — Obtener solo los IDs de tickets de Telefonía del mes/año
      */
-    protected function getTelefoniaIds(int $month, int $year): array
+    public function getTelefoniaIds(int $month, int $year): array
     {
         $startDate = \Carbon\Carbon::createFromDate($year, $month, 1)
             ->startOfDay()->format('Y-m-d\TH:i:s\Z');
@@ -80,47 +92,49 @@ class Meta2Service
     {
         if (empty($ticketIds)) return [];
 
-        $baseUrl    = $this->baseUrl;
-        $authHeader = $this->authHeader;
+        $result      = [];
+        $authHeader  = $this->authHeader;
+        $baseUrl     = $this->baseUrl;
+        $fieldFilter = $this->buildFieldFilter();
 
-        // Lanzar todas las peticiones en paralelo
-        $responses = Http::pool(function ($pool) use ($ticketIds, $baseUrl, $authHeader) {
-            return array_map(
-                fn($id) => $pool
-                    ->withHeaders(['Authorization' => $authHeader])
-                    ->timeout(30)
-                    ->get("{$baseUrl}/tickets/{$id}/customfields"),
-                $ticketIds
-            );
-        });
+        $chunks = array_chunk($ticketIds, 10);
 
-        // Procesar respuestas y aplanar campos
-        $result = [];
+        foreach ($chunks as $chunk) {
+            $responses = Http::pool(function ($pool) use ($chunk, $baseUrl, $authHeader, $fieldFilter) {
+                return array_map(
+                    fn($id) => $pool
+                        ->withHeaders(['Authorization' => $authHeader])
+                        ->timeout(30)
+                        ->get("{$baseUrl}/tickets/{$id}/customfields", [
+                            '$select' => 'ticketId,name,value,ticketTypeFieldId',
+                            '$filter' => $fieldFilter,
+                        ]),
+                    $chunk
+                );
+            });
 
-        foreach ($ticketIds as $index => $ticketId) {
-            $response = $responses[$index];
-            $fields   = [];
-
-            // Verificar que la respuesta fue exitosa
-            if ($response instanceof \Illuminate\Http\Client\Response && $response->successful()) {
-                $rawFields = $response->json() ?? [];
-            } else {
+            foreach ($chunk as $index => $ticketId) {
+                $response  = $responses[$index];
                 $rawFields = [];
-            }
 
-            // Aplanar: ticketId + name => value
-            $flat = ['ticketId' => $ticketId];
-
-            foreach ($rawFields as $field) {
-                $name  = trim($field['name'] ?? '');
-                $value = $field['value'] ?? '';
-
-                if ($name) {
-                    $flat[$name] = $value;
+                if ($response instanceof \Illuminate\Http\Client\Response && $response->successful()) {
+                    // ✅ Sin wrapper 'value'
+                    $rawFields = $response->json() ?? [];
                 }
+
+                $flat = ['ticketId' => $ticketId];
+                foreach ($rawFields as $field) {
+                    // ✅ Name y Value con mayúscula
+                    $name = trim($field['Name'] ?? $field['name'] ?? '');
+                    if ($name) $flat[$name] = $field['Value'] ?? $field['value'] ?? '';
+                }
+
+                $result[$ticketId] = $flat;
             }
 
-            $result[$ticketId] = $flat;
+            if (count($chunks) > 1) {
+                usleep(200000);
+            }
         }
 
         return $result;
@@ -313,19 +327,51 @@ class Meta2Service
 
     public function debugCustomFields(string $ticketId): array
     {
-        $fields = $this->get("/tickets/{$ticketId}/customfields");
+        $fieldFilter = $this->buildFieldFilter();
+
+        $fields = $this->getRaw(
+            "/tickets/{$ticketId}/customfields" .
+            "?\$select=ticketId,name,value,ticketTypeFieldId" .
+            "&\$filter=" . urlencode($fieldFilter)
+        );
 
         $result = ['ticketId' => $ticketId, 'raw' => $fields, 'aplanado' => []];
 
         foreach ($fields as $field) {
-            $name  = trim($field['name'] ?? '');
-            $value = $field['value'] ?? '';
+            // ✅ Name y Value con mayúscula
+            $name  = trim($field['Name'] ?? $field['name'] ?? '');
+            $value = $field['Value'] ?? $field['value'] ?? '';
             if ($name) {
                 $result['aplanado'][$name] = $value;
             }
         }
 
         return $result;
+    }
+
+    /**
+     * Petición GET que devuelve el JSON directamente (sin wrapper 'value')
+     */
+    protected function getRaw(string $endpoint, int $timeout = 60): array
+    {
+        $response = Http::withHeaders([
+            'Authorization' => $this->authHeader,
+        ])->timeout($timeout)->get($this->baseUrl . $endpoint);
+
+        if ($response->failed()) return [];
+
+        // Devuelve el JSON completo sin buscar 'value'
+        return $response->json() ?? [];
+    }
+
+    protected function buildFieldFilter(): string
+    {
+        $conditions = array_map(
+            fn($id) => "TicketTypeFieldId eq {$id}",
+            $this->requiredFieldIds
+        );
+
+        return implode(' or ', $conditions);
     }
 
 }
