@@ -78,9 +78,9 @@ class Meta2Controller extends Controller
             ->newHeadlessMode()
             ->noSandbox()
             ->waitUntilNetworkIdle()
-            ->paperSize(355.6, 215.9)
+            ->paperSize(279.4, 215.9) // 👈 Letter: 8.5" x 11" en mm
             ->landscape()
-            ->margins(10, 10, 10, 10)
+            ->margins(8, 8, 8, 8)
             ->savePdf($path);
 
         return response()->download($path, $filename, [

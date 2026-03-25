@@ -90,6 +90,7 @@ class Meta2Service
      */
     protected function getCustomFieldsPool(array $ticketIds): array
     {
+        $codeFields = ['Reporte 1', 'Detalle - Reporte 2', 'Causa', 'Ubicación'];
         if (empty($ticketIds)) return [];
 
         $result      = [];
@@ -124,9 +125,15 @@ class Meta2Service
 
                 $flat = ['ticketId' => $ticketId];
                 foreach ($rawFields as $field) {
-                    // ✅ Name y Value con mayúscula
-                    $name = trim($field['Name'] ?? $field['name'] ?? '');
-                    if ($name) $flat[$name] = $field['Value'] ?? $field['value'] ?? '';
+                    $name  = trim($field['Name'] ?? $field['name'] ?? '');
+                    $value = $field['Value'] ?? $field['value'] ?? '';
+
+                    if ($name) {
+                        // Extraer solo código en campos específicos
+                        $flat[$name] = in_array($name, $codeFields)
+                            ? $this->extractCode((string)$value)
+                            : ($value ?? '');
+                    }
                 }
 
                 $result[$ticketId] = $flat;
@@ -327,6 +334,8 @@ class Meta2Service
 
     public function debugCustomFields(string $ticketId): array
     {
+        $codeFields = ['Reporte 1', 'Detalle - Reporte 2', 'Causa', 'Ubicación'];
+
         $fieldFilter = $this->buildFieldFilter();
 
         $fields = $this->getRaw(
@@ -338,11 +347,13 @@ class Meta2Service
         $result = ['ticketId' => $ticketId, 'raw' => $fields, 'aplanado' => []];
 
         foreach ($fields as $field) {
-            // ✅ Name y Value con mayúscula
             $name  = trim($field['Name'] ?? $field['name'] ?? '');
             $value = $field['Value'] ?? $field['value'] ?? '';
+
             if ($name) {
-                $result['aplanado'][$name] = $value;
+                $result['aplanado'][$name] = in_array($name, $codeFields)
+                    ? $this->extractCode((string)$value)
+                    : ($value ?? '');
             }
         }
 
@@ -372,6 +383,22 @@ class Meta2Service
         );
 
         return implode(' or ', $conditions);
+    }
+
+    /**
+     * Extraer solo el código del valor (antes del \t o del primer espacio)
+     */
+    protected function extractCode(string $value): string
+    {
+        if (!$value) return '';
+
+        // Si tiene tabulación, tomar lo que está antes
+        if (str_contains($value, "\t")) {
+            return trim(explode("\t", $value)[0]);
+        }
+
+        // Si no tiene tabulación, tomar primera palabra
+        return trim(explode(' ', $value)[0]);
     }
 
 }
