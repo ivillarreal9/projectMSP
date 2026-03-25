@@ -29,6 +29,7 @@
                         <option value="user"   {{ old('role') === 'user'   ? 'selected' : '' }}>Usuario</option>
                         <option value="editor" {{ old('role') === 'editor' ? 'selected' : '' }}>Editor</option>
                         <option value="admin"  {{ old('role') === 'admin'  ? 'selected' : '' }}>Admin</option>
+                        <option value="ventas" {{ old('role', $user->role ?? '') === 'ventas' ? 'selected' : '' }}>Ventas</option>
                     </select>
                     @error('role') <p class="text-red-500 text-xs mt-1">{{ $message }}</p> @enderror
                 </div>

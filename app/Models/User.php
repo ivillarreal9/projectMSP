@@ -46,6 +46,9 @@ class User extends Authenticatable
             'password' => 'hashed',
         ];
     }
+    // En $fillable ya está 'role', solo actualiza el método hasRole
+    // y agrega isVentas()
+
     public function isAdmin(): bool
     {
         return $this->role === 'admin';
@@ -54,6 +57,11 @@ class User extends Authenticatable
     public function isEditor(): bool
     {
         return $this->role === 'editor';
+    }
+
+    public function isVentas(): bool
+    {
+        return $this->role === 'ventas';
     }
 
     public function hasRole(string $role): bool
