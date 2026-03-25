@@ -130,53 +130,23 @@
                 </a>
                 @endif
 
-                {{-- Dashboard de Ventas (solo ventas y admin) --}}
-                @if(auth()->user()->isVentas() || auth()->user()->isAdmin())
+                @if(auth()->user()->isVentas())
                 <a href="{{ route('admin.sales.index') }}"
                 class="group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 hover:border-purple-400 dark:hover:border-purple-500 hover:shadow-md transition-all duration-200">
+
                     <div class="flex items-start justify-between mb-4">
-                        <div class="w-10 h-10 bg-purple-50 dark:bg-purple-900/30 rounded-lg flex items-center justify-center group-hover:bg-purple-100 dark:group-hover:bg-purple-900/50 transition">
+                        <div class="w-10 h-10 bg-purple-50 dark:bg-purple-900/30 rounded-lg flex items-center justify-center">
                             <svg class="w-5 h-5 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2"/>
                             </svg>
                         </div>
-                        <svg class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-purple-400 transition" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                        </svg>
                     </div>
-                    <h3 class="text-sm font-semibold text-gray-800 dark:text-gray-200 group-hover:text-purple-600 dark:group-hover:text-purple-400 transition">
-                        Dashboard de Ventas
-                    </h3>
-                    <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                        Seguimiento comercial Odoo
-                    </p>
+
+                    <h3 class="text-sm font-semibold">Dashboard de Ventas</h3>
+                    <p class="text-xs text-gray-400">Seguimiento comercial Odoo</p>
                 </a>
                 @endif
-
-
-                {{-- Dashboard de Ventas (solo ventas y admin) --}}
-                @if(auth()->user()->isVentas() || auth()->user()->isAdmin())
-                <a href="{{ route('admin.sales.index') }}"
-                class="group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 hover:border-purple-400 dark:hover:border-purple-500 hover:shadow-md transition-all duration-200">
-                    <div class="flex items-start justify-between mb-4">
-                        <div class="w-10 h-10 bg-purple-50 dark:bg-purple-900/30 rounded-lg flex items-center justify-center group-hover:bg-purple-100 dark:group-hover:bg-purple-900/50 transition">
-                            <svg class="w-5 h-5 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
-                            </svg>
-                        </div>
-                        <svg class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-purple-400 transition" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                        </svg>
-                    </div>
-                    <h3 class="text-sm font-semibold text-gray-800 dark:text-gray-200 group-hover:text-purple-600 dark:group-hover:text-purple-400 transition">
-                        Consultas de APIS DEL MSP
-                    </h3>
-                    <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                        Seguimiento comercial Odoo
-                    </p>
-                </a>
-                @endif
-
 
             </div>
         </div>

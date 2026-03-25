@@ -6,7 +6,7 @@ use App\Http\Controllers\Admin\MassReportController;
 use App\Http\Controllers\Admin\ApiMspController;
 use App\Http\Controllers\Admin\SurveyController;
 use App\Http\Controllers\Admin\Meta2Controller;
-use App\Http\Controllers\Admin\SalesDashboardController;
+use App\Http\Controllers\Admin\Sales\SalesDashboardController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -76,14 +76,25 @@ Route::middleware(['auth', 'role:admin,editor'])
         Route::get('api-msp', [ApiMspController::class, 'index'])->name('api-msp.index');
         Route::post('api-msp/credentials', [ApiMspController::class, 'saveCredential'])->name('api-msp.credentials');
         Route::get('api-msp/export', [ApiMspController::class, 'export'])->name('api-msp.export');
+        
     });
 
 // ─── Ventas ───────────────────────────────────────────────────
-Route::middleware(['auth', 'role:ventas,admin'])
-    ->prefix('admin')
-    ->name('admin.')
+Route::prefix('admin/sales')
+    ->middleware(['auth'])
+    ->name('admin.sales.')
     ->group(function () {
-        Route::get('sales', [SalesDashboardController::class, 'index'])->name('sales.index');
-    });    
 
+        Route::get('/', [SalesDashboardController::class, 'index'])->name('index');
+
+    });  
+
+
+// ─── Prueba AI (temporal) ───────────────────────────────────
+Route::get('/ai-test', function () {
+    $response = \Laravel\Ai\Ai::textProvider('anthropic')
+        ->generate('Hola, responde en español: ¿qué es Laravel en una sola oración?');
+
+    return response()->json(['respuesta' => (string) $response]);
+}); 
 require __DIR__.'/auth.php';
