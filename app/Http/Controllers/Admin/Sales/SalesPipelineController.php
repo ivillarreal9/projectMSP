@@ -3,11 +3,11 @@ namespace App\Http\Controllers\Admin\Sales;
 use App\Http\Controllers\Controller;
 use App\Services\Sales\OdooService;
 
-class SalesDashboardController extends Controller
+class SalesPipelineController extends Controller
 {
     public function index(OdooService $odoo)
     {
-        $kpis = $odoo->getKpis();
-        return view('admin.sales.dashboard.index', compact('kpis'));
+        $pipeline = $odoo->getPipeline();
+        return view('admin.sales.pipeline.index', compact('pipeline'));
     }
 }

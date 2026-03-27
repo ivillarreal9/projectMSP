@@ -7,6 +7,10 @@ use App\Http\Controllers\Admin\ApiMspController;
 use App\Http\Controllers\Admin\SurveyController;
 use App\Http\Controllers\Admin\Meta2Controller;
 use App\Http\Controllers\Admin\Sales\SalesDashboardController;
+use App\Http\Controllers\Admin\Sales\SalesPipelineController;
+use App\Http\Controllers\Admin\Sales\SalesClientsController;
+use App\Http\Controllers\Admin\Sales\SalesExecutivesController;
+use App\Http\Controllers\Admin\Sales\SalesReassignController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -80,15 +84,31 @@ Route::middleware(['auth', 'role:admin,editor'])
     });
 
 // ─── Ventas ───────────────────────────────────────────────────
-Route::prefix('admin/sales')
-    ->middleware(['auth'])
+Route::middleware(['auth', 'role:ventas,admin'])
+    ->prefix('admin/sales')
     ->name('admin.sales.')
     ->group(function () {
+        Route::get('/',          [SalesDashboardController::class,  'index'])->name('index');
+        Route::get('/pipeline',  [SalesPipelineController::class,   'index'])->name('pipeline');
+        Route::get('/clients',   [SalesClientsController::class,    'index'])->name('clients');
+        Route::get('/executives',[SalesExecutivesController::class, 'index'])->name('executives');
+        Route::get('/reassign',  [SalesReassignController::class,   'index'])->name('reassign');
+        Route::post('/reassign/export', [SalesReassignController::class, 'export'])->name('reassign.export');
+    }); 
 
-        Route::get('/', [SalesDashboardController::class, 'index'])->name('index');
-
-    });  
-
+Route::get('/odoo-test', function () {
+    $odoo = new \App\Services\Sales\OdooService();
+    
+    // Probar login
+    $uid = $odoo->login();
+    
+    return response()->json([
+        'uid'    => $uid,
+        'url'    => config('services.odoo.url'),
+        'db'     => config('services.odoo.db'),
+        'user'   => config('services.odoo.username'),
+    ]);
+});
 
 // ─── Prueba AI (temporal) ───────────────────────────────────
 Route::get('/ai-test', function () {
