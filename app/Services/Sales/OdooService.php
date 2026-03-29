@@ -63,12 +63,32 @@ class OdooService
 
     public function getKpis(): array
     {
-        $leads        = $this->execute('crm.lead', 'search_count', [[['type', '=', 'lead']]]) ?? 0;
-        $opportunities= $this->execute('crm.lead', 'search_count', [[['type', '=', 'opportunity']]]) ?? 0;
-        $quotations   = $this->execute('sale.order', 'search_count', [[['state', 'in', ['draft', 'sent']]]]) ?? 0;
-        $won          = $this->execute('crm.lead', 'search_count', [[['stage_id.is_won', '=', true]]]) ?? 0;
+        $leads         = $this->execute('crm.lead', 'search_count', [[['type', '=', 'lead'], ['active', '=', true]]]) ?? 0;
+        $opportunities = $this->execute('crm.lead', 'search_count', [[['type', '=', 'opportunity'], ['active', '=', true]]]) ?? 0;
+        $quotations    = $this->execute('sale.order', 'search_count', [[['state', 'in', ['draft', 'sent']]]]) ?? 0;
+        $won           = $this->execute('crm.lead', 'search_count', [[['type', '=', 'opportunity'], ['stage_id.is_won', '=', true]]]) ?? 0;
 
-        return compact('leads', 'opportunities', 'quotations', 'won');
+        // Clientes en riesgo — sin factura en más de 60 días
+        $cutoff     = now()->subDays(60)->format('Y-m-d');
+        try {
+            $atRisk = $this->execute('res.partner', 'search_count', [[
+                ['customer_rank', '>', 0],
+                ['is_company', '=', true],
+                ['date_last_invoice', '<', $cutoff],
+            ]]) ?? 0;
+        } catch (\Throwable $e) {
+            $atRisk = 0;
+        }
+
+        // Monto total pipeline
+        $pipeline = $this->execute('sale.order', 'search_read',
+            [[['state', 'in', ['draft', 'sent']]]],
+            ['fields' => ['amount_total']]
+        ) ?? [];
+
+        $pipelineTotal = collect($pipeline)->sum('amount_total');
+
+        return compact('leads', 'opportunities', 'quotations', 'won', 'atRisk', 'pipelineTotal');
     }
 
     // ── Pipeline ──────────────────────────────────────────────

@@ -19,10 +19,10 @@
                     {{ session('success') }}
                 </div>
             @endif
-            @if(session('error') || isset($error))
+            @if(session('error'))
                 <div class="mb-4 flex items-center gap-3 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 text-red-700 dark:text-red-300 rounded-lg text-sm">
                     <svg class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-                    {{ session('error') ?? $error }}
+                    {{ session('error') }}
                 </div>
             @endif
 
@@ -45,16 +45,18 @@
                         @endif
                     </p>
                 </div>
+
                 <div class="flex items-center gap-3">
-                    @if(!empty($tickets))
-                        <a href="{{ route('admin.api-msp.export', ['fecha_inicio' => $fechaInicio, 'fecha_fin' => $fechaFin]) }}"
-                           class="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition shadow-sm">
-                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-                            </svg>
-                            Exportar Excel
-                        </a>
-                    @endif
+
+
+                    <button id="btn-export" onclick="exportExcel()"
+                            class="hidden inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition shadow-sm">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                        </svg>
+                        Exportar Excel
+                    </button>
+
                     <button onclick="openCredModal()"
                             class="inline-flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition shadow-sm">
                         <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -67,129 +69,151 @@
 
             {{-- Filtros --}}
             <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm mb-5">
-                <form method="GET" action="{{ route('admin.api-msp.index') }}"
-                      class="px-6 py-4 flex flex-wrap items-end gap-4">
-
+                <div class="px-6 py-4 flex flex-wrap items-end gap-4">
                     <div>
                         <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Fecha desde</label>
-                        <input type="date" name="fecha_inicio" value="{{ $fechaInicio }}"
+                        <input type="date" id="fecha_inicio" value="{{ $fechaInicio }}"
                                class="text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-400">
                     </div>
-
                     <div>
                         <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Fecha hasta</label>
-                        <input type="date" name="fecha_fin" value="{{ $fechaFin }}"
+                        <input type="date" id="fecha_fin" value="{{ $fechaFin }}"
                                class="text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-400">
                     </div>
-
-                    <button type="submit"
+                    <button onclick="startQuery()" id="btn-filtrar"
                             class="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition">
                         <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z"/>
                         </svg>
                         Filtrar
                     </button>
-
-                    @if(!empty($tickets))
-                        <span class="text-sm text-gray-400 dark:text-gray-500 self-center">
-                            {{ count($tickets) }} registros encontrados
-                        </span>
-                    @endif
-                </form>
+                    <span id="result-count" class="text-sm text-gray-400 dark:text-gray-500 self-center hidden"></span>
+                </div>
             </div>
 
             {{-- Tabla --}}
             <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
-                @if(empty($tickets))
-                    <div class="flex flex-col items-center gap-3 py-16 text-gray-300 dark:text-gray-600">
-                        <svg class="w-12 h-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                        </svg>
-                        <p class="text-sm text-gray-400 dark:text-gray-500">
-                            @if(!$credential)
-                                Configura las credenciales para comenzar
-                            @else
-                                Selecciona un rango de fechas y presiona Filtrar
-                            @endif
-                        </p>
-                    </div>
-                @else
+                <div id="table-empty" class="flex flex-col items-center gap-3 py-16 text-gray-300 dark:text-gray-600">
+                    <svg class="w-12 h-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                    <p class="text-sm text-gray-400 dark:text-gray-500">
+                        @if(!$credential)
+                            Configura las credenciales para comenzar
+                        @else
+                            Selecciona un rango de fechas y presiona Filtrar
+                        @endif
+                    </p>
+                </div>
+
+                <div id="table-container" class="hidden">
                     <div class="overflow-x-auto">
                         <table class="min-w-full text-sm">
-                            <thead>
-                                <tr class="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50">
-                                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">Ticket #</th>
-                                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">Título</th>
-                                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">Cliente</th>
-                                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">Ubicación</th>
-                                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">Tipo</th>
-                                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">Sub-tipo</th>
-                                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">Work Type</th>
-                                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">Técnico</th>
-                                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">Creado</th>
-                                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">Completado</th>
-                                </tr>
+                            <thead id="table-head">
+                                <tr class="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50"></tr>
                             </thead>
-                            <tbody class="divide-y divide-gray-50 dark:divide-gray-700/60">
-                                @foreach($tickets as $ticket)
-                                <tr class="hover:bg-gray-50/70 dark:hover:bg-gray-700/30 transition">
-                                    <td class="px-4 py-3 font-mono text-xs text-purple-600 dark:text-purple-400 whitespace-nowrap">
-                                        {{ $ticket['TicketNumber'] ?? 'N/A' }}
-                                    </td>
-                                    <td class="px-4 py-3 text-gray-800 dark:text-gray-200 max-w-xs truncate" title="{{ $ticket['TicketTitle'] ?? '' }}">
-                                        {{ $ticket['TicketTitle'] ?? 'N/A' }}
-                                    </td>
-                                    <td class="px-4 py-3 text-gray-600 dark:text-gray-400 whitespace-nowrap">
-                                        {{ $ticket['CustomerName'] ?? 'N/A' }}
-                                    </td>
-                                    <td class="px-4 py-3 text-gray-600 dark:text-gray-400 whitespace-nowrap">
-                                        {{ $ticket['LocationName'] ?? 'N/A' }}
-                                    </td>
-                                    <td class="px-4 py-3 text-gray-600 dark:text-gray-400 whitespace-nowrap">
-                                        {{ $ticket['TicketIssueTypeName'] ?? 'N/A' }}
-                                    </td>
-                                    <td class="px-4 py-3 text-gray-600 dark:text-gray-400 whitespace-nowrap">
-                                        {{ $ticket['TicketSubIssueTypeName'] ?? 'N/A' }}
-                                    </td>
-                                    <td class="px-4 py-3 whitespace-nowrap">
-                                        @if(!empty($ticket['WorkType']))
-                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
-                                                {{ $ticket['WorkType'] }}
-                                            </span>
-                                        @else
-                                            <span class="text-gray-300 dark:text-gray-600">—</span>
-                                        @endif
-                                    </td>
-                                    <td class="px-4 py-3 text-gray-600 dark:text-gray-400 whitespace-nowrap">
-                                        {{ trim(($ticket['UserFirstName'] ?? '') . ' ' . ($ticket['UserLastName'] ?? '')) ?: '—' }}
-                                    </td>
-                                    <td class="px-4 py-3 text-gray-500 dark:text-gray-400 whitespace-nowrap text-xs">
-                                        {{ $ticket['CreatedDate'] ?? 'N/A' }}
-                                    </td>
-                                    <td class="px-4 py-3 text-gray-500 dark:text-gray-400 whitespace-nowrap text-xs">
-                                        {{ $ticket['CompletedDate'] ?? 'N/A' }}
-                                    </td>
-                                </tr>
-                                @endforeach
-                            </tbody>
+                            <tbody id="table-body" class="divide-y divide-gray-50 dark:divide-gray-700/60"></tbody>
                         </table>
                     </div>
-
                     <div class="px-6 py-3 border-t border-gray-100 dark:border-gray-700">
-                        <p class="text-xs text-gray-400 dark:text-gray-500">
-                            Total: {{ count($tickets) }} registros — Período: {{ $fechaInicio }} al {{ $fechaFin }}
-                        </p>
+                        <p id="table-footer" class="text-xs text-gray-400 dark:text-gray-500"></p>
                     </div>
-                @endif
+                </div>
+
+                <div id="table-error" class="hidden flex-col items-center gap-3 py-16">
+                    <svg class="w-10 h-10 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <p id="table-error-msg" class="text-sm text-red-500 text-center"></p>
+                    <button onclick="startQuery()" class="text-xs text-purple-600 hover:underline mt-1">Reintentar</button>
+                </div>
             </div>
+
         </div>
     </div>
 
-    {{-- Modal Credenciales --}}
+    {{-- ===================================================================
+         Modal: Progreso SSE
+    ==================================================================== --}}
+    <div id="loading-modal"
+         class="fixed inset-0 z-50 hidden items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-8">
+
+            <div class="flex justify-center mb-6">
+                <div class="relative w-16 h-16">
+                    <svg class="animate-spin w-16 h-16 text-purple-200 dark:text-purple-900/50" fill="none" viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"/>
+                    </svg>
+                    <svg class="animate-spin w-16 h-16 text-purple-600 absolute inset-0" style="animation-duration:0.8s" fill="none" viewBox="0 0 24 24">
+                        <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                    </svg>
+                    <div class="absolute inset-0 flex items-center justify-center">
+                        <svg class="w-6 h-6 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+
+            <h3 class="text-center text-base font-semibold text-gray-800 dark:text-gray-100 mb-1">
+                Consultando tickets MSP
+            </h3>
+            <p id="loading-message" class="text-center text-xs text-gray-400 dark:text-gray-500 mb-6 min-h-[1rem]">
+                Iniciando...
+            </p>
+
+            <div class="mb-5">
+                <div class="flex items-center justify-between mb-1.5">
+                    <span id="loading-step-label" class="text-xs font-medium text-gray-500 dark:text-gray-400">Paso 1 de 3</span>
+                    <span id="loading-percent-label" class="text-xs font-bold text-purple-600 dark:text-purple-400">0%</span>
+                </div>
+                <div class="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-2.5 overflow-hidden">
+                    <div id="loading-bar"
+                         class="h-2.5 rounded-full bg-gradient-to-r from-purple-500 to-purple-700 transition-all duration-500 ease-out"
+                         style="width: 0%"></div>
+                </div>
+            </div>
+
+            <div class="space-y-2">
+                <div id="step-row-1" class="flex items-center gap-3 p-2.5 rounded-lg bg-gray-50 dark:bg-gray-700/50 transition-all duration-300">
+                    <div id="step-icon-1" class="w-7 h-7 rounded-full border-2 border-gray-300 dark:border-gray-600 flex items-center justify-center shrink-0 text-xs text-gray-400 font-semibold">1</div>
+                    <div>
+                        <p class="text-xs font-semibold text-gray-700 dark:text-gray-200">Tickets</p>
+                        <p class="text-[10px] text-gray-400">ticketsview filtrado por fecha</p>
+                    </div>
+                    <span id="step-badge-1" class="ml-auto text-[10px] text-gray-400 hidden"></span>
+                </div>
+
+                <div id="step-row-2" class="flex items-center gap-3 p-2.5 rounded-lg bg-gray-50 dark:bg-gray-700/50 opacity-40 transition-all duration-300">
+                    <div id="step-icon-2" class="w-7 h-7 rounded-full border-2 border-gray-300 dark:border-gray-600 flex items-center justify-center shrink-0 text-xs text-gray-400 font-semibold">2</div>
+                    <div>
+                        <p class="text-xs font-semibold text-gray-700 dark:text-gray-200">Time entries & Custom fields</p>
+                        <p id="step-2-sub" class="text-[10px] text-gray-400">En paralelo por lotes de 100</p>
+                    </div>
+                    <span id="step-badge-2" class="ml-auto text-[10px] text-purple-500 font-medium hidden"></span>
+                </div>
+
+                <div id="step-row-3" class="flex items-center gap-3 p-2.5 rounded-lg bg-gray-50 dark:bg-gray-700/50 opacity-40 transition-all duration-300">
+                    <div id="step-icon-3" class="w-7 h-7 rounded-full border-2 border-gray-300 dark:border-gray-600 flex items-center justify-center shrink-0 text-xs text-gray-400 font-semibold">3</div>
+                    <div>
+                        <p class="text-xs font-semibold text-gray-700 dark:text-gray-200">Preparando resultados</p>
+                        <p class="text-[10px] text-gray-400">Combinando y formateando datos</p>
+                    </div>
+                </div>
+            </div>
+
+            <p class="text-center text-[10px] text-gray-300 dark:text-gray-600 mt-5">
+                El tiempo varía según el rango de fechas
+            </p>
+        </div>
+    </div>
+
+    {{-- ===================================================================
+         Modal: Credenciales
+    ==================================================================== --}}
     <div id="cred-modal"
          class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 backdrop-blur-sm">
         <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-md mx-4 p-6">
-
             <div class="flex items-center gap-3 mb-5">
                 <div class="w-10 h-10 bg-purple-100 dark:bg-purple-900/40 rounded-full flex items-center justify-center shrink-0">
                     <svg class="w-5 h-5 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -201,60 +225,361 @@
                     <p class="text-xs text-gray-500 dark:text-gray-400">Autenticación Basic para MSP Manager</p>
                 </div>
             </div>
-
             <form method="POST" action="{{ route('admin.api-msp.credentials') }}" class="space-y-4">
                 @csrf
-
                 <div>
                     <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Usuario (email)</label>
-                    <input type="text" name="username"
-                           value="{{ $credential->username ?? '' }}"
-                           placeholder="usuario@empresa.com"
+                    <input type="text" name="username" value="{{ $credential->username ?? '' }}" placeholder="usuario@empresa.com"
                            class="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-400">
                 </div>
-
                 <div>
                     <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Contraseña</label>
-                    <input type="password" name="password"
-                           placeholder="••••••••"
+                    <input type="password" name="password" placeholder="••••••••"
                            class="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-400">
                 </div>
-
                 <div>
                     <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Base URL de la API</label>
-                    <input type="text" name="base_url"
-                           value="{{ $credential->base_url ?? 'https://api.mspmanager.com/odata' }}"
+                    <input type="text" name="base_url" value="{{ $credential->base_url ?? 'https://api.mspmanager.com/odata' }}"
                            class="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-400">
                 </div>
-
                 <div class="flex justify-end gap-3 pt-2">
                     <button type="button" onclick="closeCredModal()"
-                            class="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition">
-                        Cancelar
-                    </button>
+                            class="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition">Cancelar</button>
                     <button type="submit"
-                            class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition">
-                        Guardar credenciales
-                    </button>
+                            class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition">Guardar credenciales</button>
                 </div>
             </form>
         </div>
     </div>
 
     <script>
-        function openCredModal() {
-            const m = document.getElementById('cred-modal');
-            m.classList.remove('hidden');
-            m.classList.add('flex');
+    // =======================================================================
+    // Estado global
+    // =======================================================================
+    let ticketsData     = [];
+    let currentDates    = { inicio: '', fin: '' };
+    let activeSource    = null;
+    let currentCacheKey = '';
+    let queryFinished   = false;
+
+    const FIXED_COLS = {
+        TicketNumber:           'Ticket #',
+        TicketTitle:            'Título',
+        CustomerName:           'Cliente',
+        LocationName:           'Ubicación',
+        TicketIssueTypeName:    'Tipo',
+        TicketSubIssueTypeName: 'Sub-tipo',
+        WorkType:               'Work Type',
+        CustomWorkType:         'Custom Work Type',
+        CreatedDate:            'Creado',
+        CompletedDate:          'Completado',
+    };
+    const FIXED_KEYS = [...Object.keys(FIXED_COLS), 'TicketId', 'DueDate'];
+
+    // =======================================================================
+    // SSE: iniciar consulta
+    // =======================================================================
+    function startQuery() {
+        const inicio = document.getElementById('fecha_inicio').value;
+        const fin    = document.getElementById('fecha_fin').value;
+
+        if (!inicio || !fin) {
+            alert('Selecciona ambas fechas.');
+            return;
         }
-        function closeCredModal() {
-            const m = document.getElementById('cred-modal');
-            m.classList.add('hidden');
-            m.classList.remove('flex');
+
+        currentDates  = { inicio, fin };
+        queryFinished = false;
+
+        if (activeSource) {
+            activeSource.close();
+            activeSource = null;
         }
-        document.getElementById('cred-modal').addEventListener('click', function(e) {
-            if (e.target === this) closeCredModal();
+
+        resetTable();
+        showLoadingModal();
+        setProgress(5, 'Iniciando consulta...', 'Paso 1 de 3');
+
+        const url = `{{ route('admin.api-msp.stream') }}?fecha_inicio=${inicio}&fecha_fin=${fin}`;
+        activeSource = new EventSource(url);
+
+        // Status
+        activeSource.addEventListener('status', e => {
+            const d = JSON.parse(e.data);
+            setProgress(d.percent, d.message, stepLabel(d.step));
+            activateStep(d.step);
+            if (d.tickets_found !== undefined) {
+                document.getElementById('step-badge-1').textContent = `${d.tickets_found} tickets`;
+                document.getElementById('step-badge-1').classList.remove('hidden');
+            }
         });
+
+        // Progress por lote
+        activeSource.addEventListener('progress', e => {
+            const d = JSON.parse(e.data);
+            setProgress(d.percent, d.message, stepLabel(d.step));
+            document.getElementById('step-2-sub').textContent = `${d.done} / ${d.total} tickets procesados`;
+            document.getElementById('step-badge-2').textContent = `${d.done}/${d.total}`;
+            document.getElementById('step-badge-2').classList.remove('hidden');
+        });
+
+        // Done — recibe solo cache_key, pide datos por fetch
+        activeSource.addEventListener('done', e => {
+            queryFinished = true;
+            activeSource.close();
+            activeSource = null;
+
+            const d = JSON.parse(e.data);
+            currentCacheKey = d.cache_key || '';
+
+            setProgress(100, d.message || 'Consulta completada', 'Completado');
+            markAllStepsDone();
+
+            if (d.total === 0) {
+                setTimeout(() => {
+                    hideLoadingModal();
+                    document.getElementById('table-empty').classList.remove('hidden');
+                }, 500);
+                return;
+            }
+
+            // Pedir los tickets al servidor por fetch normal
+            fetch(`{{ route('admin.api-msp.results') }}?cache_key=${d.cache_key}`)
+                .then(r => {
+                    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                    return r.json();
+                })
+                .then(data => {
+                    setTimeout(() => {
+                        hideLoadingModal();
+                        renderTable(data.tickets);
+                    }, 500);
+                })
+                .catch(err => {
+                    hideLoadingModal();
+                    showTableError('Error al cargar los resultados: ' + err.message);
+                });
+        });
+
+        // Error SSE del servidor
+        activeSource.addEventListener('error', e => {
+            if (queryFinished) return;
+            try {
+                const d = JSON.parse(e.data);
+                activeSource.close();
+                activeSource = null;
+                hideLoadingModal();
+                showTableError(d.message || 'Error en el servidor.');
+            } catch (_) {}
+        });
+
+        // Desconexión inesperada
+        activeSource.onerror = () => {
+            if (queryFinished) {
+                if (activeSource) activeSource.close();
+                return;
+            }
+
+            // Esperar 3s antes de reportar error (puede ser reconexión normal)
+            setTimeout(() => {
+                if (!queryFinished) {
+                    if (activeSource) activeSource.close();
+                    activeSource = null;
+                    hideLoadingModal();
+                    showTableError('Se perdió la conexión con el servidor.');
+                }
+            }, 3000);
+        };
+    }
+
+    // =======================================================================
+    // Renderizar tabla
+    // =======================================================================
+    function renderTable(tickets) {
+        if (!tickets || tickets.length === 0) {
+            document.getElementById('table-empty').classList.remove('hidden');
+            document.getElementById('table-container').classList.add('hidden');
+            return;
+        }
+
+        ticketsData    = tickets;
+
+        const allKeys     = [...new Set(tickets.flatMap(t => Object.keys(t)))];
+        const dynamicCols = allKeys.filter(k => !FIXED_KEYS.includes(k));
+
+        // Encabezados
+        const headRow = document.querySelector('#table-head tr');
+        headRow.innerHTML = '';
+
+        Object.entries(FIXED_COLS).forEach(([key, label]) => {
+            const th = document.createElement('th');
+            th.className = 'px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap';
+            th.textContent = label;
+            headRow.appendChild(th);
+        });
+
+        dynamicCols.forEach(col => {
+            const th = document.createElement('th');
+            th.className = 'px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap';
+            th.innerHTML = `${escHtml(col)} <span class="text-[9px] bg-orange-100 text-orange-500 px-1 rounded normal-case">CF</span>`;
+            headRow.appendChild(th);
+        });
+
+        // Filas
+        const tbody = document.getElementById('table-body');
+        tbody.innerHTML = '';
+
+        const cellMap = {
+            TicketNumber:           v => `<td class="px-4 py-3 font-mono text-xs text-purple-600 dark:text-purple-400 whitespace-nowrap">${escHtml(v) || '—'}</td>`,
+            TicketTitle:            v => `<td class="px-4 py-3 text-gray-800 dark:text-gray-200 max-w-xs truncate" title="${escHtml(v) || ''}">${escHtml(v) || '—'}</td>`,
+            CustomerName:           v => `<td class="px-4 py-3 text-gray-600 dark:text-gray-400 whitespace-nowrap">${escHtml(v) || '—'}</td>`,
+            LocationName:           v => `<td class="px-4 py-3 text-gray-600 dark:text-gray-400 whitespace-nowrap">${escHtml(v) || '—'}</td>`,
+            TicketIssueTypeName:    v => `<td class="px-4 py-3 text-gray-600 dark:text-gray-400 whitespace-nowrap">${escHtml(v) || '—'}</td>`,
+            TicketSubIssueTypeName: v => `<td class="px-4 py-3 text-gray-600 dark:text-gray-400 whitespace-nowrap">${escHtml(v) || '—'}</td>`,
+            WorkType:               v => `<td class="px-4 py-3 whitespace-nowrap">${v ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">${escHtml(v)}</span>` : '<span class="text-gray-300">—</span>'}</td>`,
+            CustomWorkType:         v => `<td class="px-4 py-3 whitespace-nowrap">${v ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">${escHtml(v)}</span>` : '<span class="text-gray-300">—</span>'}</td>`,
+            CreatedDate:            v => `<td class="px-4 py-3 text-gray-500 dark:text-gray-400 whitespace-nowrap text-xs">${escHtml(v) || '—'}</td>`,
+            CompletedDate:          v => `<td class="px-4 py-3 text-gray-500 dark:text-gray-400 whitespace-nowrap text-xs">${escHtml(v) || '—'}</td>`,
+        };
+
+        tickets.forEach(ticket => {
+            const tr = document.createElement('tr');
+            tr.className = 'hover:bg-gray-50/70 dark:hover:bg-gray-700/30 transition';
+
+            let html = '';
+            Object.keys(FIXED_COLS).forEach(key => { html += cellMap[key](ticket[key]); });
+            dynamicCols.forEach(col => {
+                const val = ticket[col];
+                html += `<td class="px-4 py-3 text-gray-600 dark:text-gray-400 whitespace-nowrap text-xs">${val !== undefined && val !== '' ? escHtml(String(val)) : '<span class="text-gray-300">—</span>'}</td>`;
+            });
+
+            tr.innerHTML = html;
+            tbody.appendChild(tr);
+        });
+
+        document.getElementById('table-footer').textContent =
+            `Total: ${tickets.length} registros — Período: ${currentDates.inicio} al ${currentDates.fin}`;
+
+        document.getElementById('table-empty').classList.add('hidden');
+        document.getElementById('table-container').classList.remove('hidden');
+        document.getElementById('result-count').textContent = `${tickets.length} registros encontrados`;
+        document.getElementById('result-count').classList.remove('hidden');
+        document.getElementById('btn-export').classList.remove('hidden');
+    }
+
+    function escHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    // =======================================================================
+    // Helpers UI
+    // =======================================================================
+    function setProgress(percent, message, label) {
+        document.getElementById('loading-bar').style.width           = percent + '%';
+        document.getElementById('loading-percent-label').textContent = percent + '%';
+        document.getElementById('loading-message').textContent       = message;
+        document.getElementById('loading-step-label').textContent    = label;
+    }
+
+    function stepLabel(step) {
+        return step ? `Paso ${step} de 3` : 'Iniciando';
+    }
+
+    function activateStep(step) {
+        for (let i = 1; i <= 3; i++) {
+            const row  = document.getElementById(`step-row-${i}`);
+            const icon = document.getElementById(`step-icon-${i}`);
+            if (i < step) {
+                row.classList.remove('opacity-40');
+                icon.className = 'w-7 h-7 rounded-full flex items-center justify-center shrink-0 bg-green-500 border-2 border-green-500';
+                icon.innerHTML = '<svg class="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>';
+            } else if (i === step) {
+                row.classList.remove('opacity-40');
+                icon.className = 'w-7 h-7 rounded-full flex items-center justify-center shrink-0 bg-purple-50 border-2 border-purple-500';
+                icon.innerHTML = '<svg class="animate-spin w-3.5 h-3.5 text-purple-600" fill="none" viewBox="0 0 24 24"><path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>';
+            } else {
+                row.classList.add('opacity-40');
+            }
+        }
+    }
+
+    function markAllStepsDone() {
+        for (let i = 1; i <= 3; i++) {
+            const row  = document.getElementById(`step-row-${i}`);
+            const icon = document.getElementById(`step-icon-${i}`);
+            row.classList.remove('opacity-40');
+            icon.className = 'w-7 h-7 rounded-full flex items-center justify-center shrink-0 bg-green-500 border-2 border-green-500';
+            icon.innerHTML = '<svg class="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>';
+        }
+    }
+
+    function showLoadingModal() {
+        const m = document.getElementById('loading-modal');
+        m.classList.remove('hidden');
+        m.classList.add('flex');
+        for (let i = 1; i <= 3; i++) {
+            const row  = document.getElementById(`step-row-${i}`);
+            const icon = document.getElementById(`step-icon-${i}`);
+            row.classList.add('opacity-40');
+            icon.className = 'w-7 h-7 rounded-full border-2 border-gray-300 dark:border-gray-600 flex items-center justify-center shrink-0 text-xs text-gray-400 font-semibold';
+            icon.textContent = i;
+        }
+        document.getElementById('step-badge-1').classList.add('hidden');
+        document.getElementById('step-badge-2').classList.add('hidden');
+        document.getElementById('step-2-sub').textContent = 'En paralelo por lotes de 100';
+    }
+
+    function hideLoadingModal() {
+        const m = document.getElementById('loading-modal');
+        m.classList.add('hidden');
+        m.classList.remove('flex');
+    }
+
+    function resetTable() {
+        document.getElementById('table-empty').classList.remove('hidden');
+        document.getElementById('table-container').classList.add('hidden');
+        document.getElementById('table-error').classList.add('hidden');
+        document.getElementById('result-count').classList.add('hidden');
+        document.getElementById('btn-export').classList.add('hidden');
+    }
+
+    function showTableError(msg) {
+        document.getElementById('table-empty').classList.add('hidden');
+        document.getElementById('table-container').classList.add('hidden');
+        const errDiv = document.getElementById('table-error');
+        errDiv.classList.remove('hidden');
+        errDiv.classList.add('flex');
+        document.getElementById('table-error-msg').textContent = msg;
+    }
+
+    // =======================================================================
+    // Export Excel
+    // =======================================================================
+    function exportExcel() {
+        const url = `{{ route('admin.api-msp.export') }}?cache_key=${currentCacheKey}&fecha_inicio=${currentDates.inicio}&fecha_fin=${currentDates.fin}`;
+        window.location.href = url;
+    }
+
+
+    // =======================================================================
+    // Modal Credenciales
+    // =======================================================================
+    function openCredModal() {
+        const m = document.getElementById('cred-modal');
+        m.classList.remove('hidden'); m.classList.add('flex');
+    }
+    function closeCredModal() {
+        const m = document.getElementById('cred-modal');
+        m.classList.add('hidden'); m.classList.remove('flex');
+    }
+    document.getElementById('cred-modal').addEventListener('click', function(e) {
+        if (e.target === this) closeCredModal();
+    });
     </script>
 
 </x-app-layout>

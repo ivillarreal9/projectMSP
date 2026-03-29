@@ -87,4 +87,60 @@ class Meta2Controller extends Controller
             'Content-Type' => 'application/pdf',
         ])->deleteFileAfterSend(true);
     }
+
+    public function stream(Request $request)
+        {
+        $month = (int) $request->get('month');
+        $year  = (int) $request->get('year');
+        $search = $request->get('search', '');
+
+        if (!$month || !$year) {
+            abort(400, 'Mes y año requeridos.');
+        }
+
+        return response()->stream(function () use ($month, $year, $search) {
+
+            $send = function (string $event, array $data) {
+                echo "event: {$event}\n";
+                echo 'data: ' . json_encode($data) . "\n\n";
+                ob_flush();
+                flush();
+            };
+
+            try {
+                // ── Paso 1 ──────────────────────────────────────────
+                $send('step', ['step' => 1, 'message' => 'Obteniendo IDs del período...']);
+                $ids = $this->meta2Service->getTelefoniaIds($month, $year);
+
+                if (empty($ids)) {
+                    $send('done', ['html' => '<div class="empty">Sin tickets en ese período.</div>']);
+                    return;
+                }
+
+                $send('step', ['step' => 1, 'message' => count($ids) . ' tickets encontrados.', 'done' => true]);
+
+                // ── Paso 2 ──────────────────────────────────────────
+                $send('step', ['step' => 2, 'message' => 'Trayendo detalle de tickets...']);
+                $tickets = $this->meta2Service->getTicketsByIdsPublic($ids, $search);
+                $send('step', ['step' => 2, 'message' => 'Detalle cargado.', 'done' => true]);
+
+                // ── Paso 3 ──────────────────────────────────────────
+                $send('step', ['step' => 3, 'message' => 'Cargando campos personalizados...']);
+                $result = $this->meta2Service->attachCustomFields($tickets);
+                $send('step', ['step' => 3, 'message' => 'Campos cargados.', 'done' => true]);
+
+                // ── HTML final ──────────────────────────────────────
+                $html = view('admin.meta-2._table', ['tickets' => $result])->render();
+                $send('done', ['html' => $html]);
+
+            } catch (\Exception $e) {
+                $send('error', ['message' => $e->getMessage()]);
+            }
+
+        }, 200, [
+            'Content-Type'      => 'text/event-stream',
+            'Cache-Control'     => 'no-cache',
+            'X-Accel-Buffering' => 'no',   // Nginx: desactiva buffer
+        ]);
+    }
 }

@@ -4,12 +4,31 @@ namespace App\Services;
 
 use App\Models\MspCredential;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Collection;
 
 class MspService
 {
     protected string $baseUrl;
     protected string $authHeader;
+
+    private const CHUNK_SIZE = 100;
+
+    private const CUSTOM_FIELD_IDS = [
+        '3113f8e8-1d04-f011-90cd-000d3a1010e6', // Tipo de Cliente
+        'cb7251d4-ad9a-ee11-bea0-0022482ddcd2',  // Causa
+        'cc7251d4-ad9a-ee11-bea0-0022482ddcd2',  // Ubicación
+        'cd7251d4-ad9a-ee11-bea0-0022482ddcd2',  // Solución - Acción
+        'ce7251d4-ad9a-ee11-bea0-0022482ddcd2',  // Detalle - Reporte 2
+        'cf7251d4-ad9a-ee11-bea0-0022482ddcd2',  // Reporte 1
+        'cabd4a41-909b-ee11-bea0-0022482ddcd2',  // Daño
+        'a80fd16c-939b-ee11-bea0-0022482ddcd2',  // Solución
+        'a90fd16c-939b-ee11-bea0-0022482ddcd2',  // Ubicación Cierre
+        'aa0fd16c-939b-ee11-bea0-0022482ddcd2',  // Imputable a:
+        '3d6ed771-f7fc-ee11-96f5-00224830661d',  // Pedido de Ventas (S0)
+        '280a350f-19cc-ee11-85f7-00224835853a',  // Tipo de ticket
+        'c096b751-9cd1-ee11-85f7-00224835853a',  // Provincia
+        '7b1b9b04-9dd1-ee11-85f7-00224835853a',  // Teléfono
+        'd8a1b573-6e98-ef11-88cf-6045bda871c2',  // Cumplimiento de agenda
+    ];
 
     public function __construct()
     {
@@ -19,9 +38,249 @@ class MspService
             throw new \Exception('No hay credenciales MSP configuradas.');
         }
 
-        $this->baseUrl    = $cred->base_url;
+        $this->baseUrl    = rtrim($cred->base_url, '/');
         $this->authHeader = 'Basic ' . base64_encode($cred->username . ':' . $cred->password);
     }
+
+    // -------------------------------------------------------------------------
+    // Métodos públicos usados por el controlador SSE
+    // -------------------------------------------------------------------------
+
+    /**
+     * EP1: obtener tickets filtrados por fecha.
+     * Expuesto públicamente para que el controlador lo llame por separado
+     * y pueda enviar el evento SSE después de completarse.
+     */
+    public function fetchTicketsPublic(string $fechaInicio, string $fechaFin): array
+    {
+        $filter = $this->buildDateFilter($fechaInicio, $fechaFin);
+        return $this->getTicketsFiltered($filter);
+    }
+
+    /**
+     * EP2 + EP3: obtener time entries y custom fields en paralelo por chunks.
+     * Acepta un callback opcional que se llama después de cada lote
+     * para reportar progreso al SSE.
+     *
+     * @param array         $tickets
+     * @param callable|null $onChunkDone  fn(int $done, int $total)
+     */
+    public function fetchExtraDataPublic(array $tickets, ?callable $onChunkDone = null): array
+    {
+        return $this->fetchEP2andEP3InParallel($tickets, $onChunkDone);
+    }
+
+    /**
+     * Combinar tickets con sus datos extra.
+     * Expuesto públicamente para que el controlador lo llame por separado.
+     */
+    public function combinePublic(array $tickets, array $extraData): array
+    {
+        return $this->combineResults($tickets, $extraData);
+    }
+
+    // -------------------------------------------------------------------------
+    // Método principal (uso directo sin SSE, ej: export)
+    // -------------------------------------------------------------------------
+
+    public function getTickets(string $fechaInicio, string $fechaFin): array
+    {
+        $tickets   = $this->fetchTicketsPublic($fechaInicio, $fechaFin);
+        $extraData = $this->fetchExtraDataPublic($tickets);
+        return $this->combinePublic($tickets, $extraData);
+    }
+
+    // -------------------------------------------------------------------------
+    // EP1: ticketsview
+    // -------------------------------------------------------------------------
+
+    protected function buildDateFilter(string $fechaInicio, string $fechaFin): string
+    {
+        $inicio = \Carbon\Carbon::parse($fechaInicio)->startOfDay()->utc()->format('Y-m-d\TH:i:s\Z');
+        $fin    = \Carbon\Carbon::parse($fechaFin)->endOfDay()->utc()->format('Y-m-d\TH:i:s\Z');
+
+        return "CompletedDate ge {$inicio} and CompletedDate lt {$fin}";
+    }
+
+    protected function getTicketsFiltered(string $filter): array
+    {
+        $select = implode(',', [
+            'TicketId', 'TicketNumber', 'TicketTitle',
+            'TicketIssueTypeName', 'TicketSubIssueTypeName',
+            'CustomerName', 'LocationName',
+            'CreatedDate', 'CompletedDate', 'DueDate',
+        ]);
+
+        $endpoint = '/ticketsview'
+            . '?$filter='  . rawurlencode($filter)
+            . '&$orderby=TicketNumber desc'
+            . '&$select='  . rawurlencode($select)
+            . '&$top=5000';
+
+        return $this->get($endpoint);
+    }
+
+    // -------------------------------------------------------------------------
+    // EP2 + EP3: pool en chunks con callback de progreso
+    // -------------------------------------------------------------------------
+
+    protected function fetchEP2andEP3InParallel(array $tickets, ?callable $onChunkDone = null): array
+    {
+        $fieldFilter = implode(' or ', array_map(
+            fn($id) => "ticketTypeFieldId eq {$id}",
+            self::CUSTOM_FIELD_IDS
+        ));
+
+        $extraData  = [];
+        $chunks     = array_chunk($tickets, self::CHUNK_SIZE);
+        $totalDone  = 0;
+        $totalCount = count($tickets);
+
+        foreach ($chunks as $chunk) {
+
+            $responses = Http::pool(function ($pool) use ($chunk, $fieldFilter) {
+                $requests = [];
+
+                foreach ($chunk as $ticket) {
+                    $ticketId = $ticket['TicketId'];
+
+                    // EP2: time entry
+                    $urlEP2 = $this->baseUrl
+                        . '/tickettimeentriesview'
+                        . '?$filter='  . rawurlencode("TicketId eq {$ticketId}")
+                        . '&$orderby=TicketNumber desc'
+                        . '&$select='  . rawurlencode('TicketId,WorkType,CustomWorkType')
+                        . '&$top=1';
+
+                    $requests[] = $pool
+                        ->as("te_{$ticketId}")
+                        ->withHeaders(['Authorization' => $this->authHeader])
+                        ->timeout(30)
+                        ->get($urlEP2);
+
+                    // EP3: custom fields
+                    $urlEP3 = $this->baseUrl
+                        . '/tickets/' . $ticketId . '/customfields'
+                        . '?$select=' . rawurlencode('ticketId,name,value')
+                        . '&$filter=' . rawurlencode($fieldFilter);
+
+                    $requests[] = $pool
+                        ->as("cf_{$ticketId}")
+                        ->withHeaders(['Authorization' => $this->authHeader])
+                        ->timeout(30)
+                        ->get($urlEP3);
+                }
+
+                return $requests;
+            });
+
+            // Procesar respuestas del lote
+            foreach ($chunk as $ticket) {
+                $ticketId = $ticket['TicketId'];
+
+                // EP2
+                $timeEntry = null;
+                try {
+                    $teResp = $responses["te_{$ticketId}"] ?? null;
+                    if ($teResp && method_exists($teResp, 'failed') && !$teResp->failed()) {
+                        $entries   = $teResp->json('value') ?? [];
+                        $timeEntry = !empty($entries) ? $entries[0] : null;
+                    }
+                } catch (\Throwable $e) {}
+
+                // EP3
+                $customFields = [];
+                try {
+                    $cfResp = $responses["cf_{$ticketId}"] ?? null;
+                    if ($cfResp && method_exists($cfResp, 'failed') && !$cfResp->failed()) {
+                        $raw = $cfResp->json() ?? [];
+                        if (isset($raw['value'])) $raw = $raw['value'];
+                        foreach ($raw as $field) {
+                            $name  = trim($field['name']  ?? $field['Name']  ?? '');
+                            $value = $field['value'] ?? $field['Value'] ?? '';
+                            if ($name !== '') $customFields[$name] = $value ?? '';
+                        }
+                    }
+                } catch (\Throwable $e) {}
+
+                $extraData[$ticketId] = [
+                    'timeEntry'    => $timeEntry,
+                    'customFields' => $customFields,
+                ];
+            }
+
+            // Reportar progreso después de cada lote
+            $totalDone += count($chunk);
+            if ($onChunkDone) {
+                $onChunkDone($totalDone, $totalCount);
+            }
+        }
+
+        return $extraData;
+    }
+
+    // -------------------------------------------------------------------------
+    // Combinar resultados
+    // -------------------------------------------------------------------------
+
+    protected function combineResults(array $tickets, array $extraData): array
+    {
+        $result = [];
+
+        foreach ($tickets as $ticket) {
+            $ticketId  = $ticket['TicketId'] ?? '';
+            $base      = $this->transformTicket($ticket);
+            $extra     = $extraData[$ticketId] ?? [];
+            $timeEntry = $extra['timeEntry']    ?? null;
+
+            $base = array_merge($base, $timeEntry
+                ? $this->transformTimeEntry($timeEntry)
+                : $this->emptyTimeEntry()
+            );
+
+            $base = array_merge($base, $extra['customFields'] ?? []);
+            $result[] = $base;
+        }
+
+        return $result;
+    }
+
+    // -------------------------------------------------------------------------
+    // Transformadores
+    // -------------------------------------------------------------------------
+
+    protected function transformTicket(array $ticket): array
+    {
+        return [
+            'TicketId'               => $ticket['TicketId']               ?? '',
+            'TicketNumber'           => $ticket['TicketNumber']            ?? '',
+            'TicketTitle'            => $ticket['TicketTitle']             ?? '',
+            'TicketIssueTypeName'    => $ticket['TicketIssueTypeName']     ?? '',
+            'TicketSubIssueTypeName' => $ticket['TicketSubIssueTypeName']  ?? '',
+            'CustomerName'           => $ticket['CustomerName']            ?? '',
+            'LocationName'           => $ticket['LocationName']            ?? '',
+            'CreatedDate'            => $this->formatDate($ticket['CreatedDate']   ?? ''),
+            'CompletedDate'          => $this->formatDate($ticket['CompletedDate'] ?? ''),
+            'DueDate'                => $this->formatDate($ticket['DueDate']       ?? ''),
+        ];
+    }
+
+    protected function transformTimeEntry(array $entry): array
+    {
+        return [
+            'WorkType'       => $entry['WorkType']       ?? '',
+            'CustomWorkType' => $entry['CustomWorkType'] ?? '',
+        ];
+    }
+
+    protected function emptyTimeEntry(): array
+    {
+        return ['WorkType' => '', 'CustomWorkType' => ''];
+    }
+
+    // -------------------------------------------------------------------------
+    // HTTP Helper
+    // -------------------------------------------------------------------------
 
     protected function get(string $endpoint, int $timeout = 60): array
     {
@@ -29,144 +288,13 @@ class MspService
             'Authorization' => $this->authHeader,
         ])->timeout($timeout)->get($this->baseUrl . $endpoint);
 
-        if ($response->failed()) return [];
+        if ($response->failed()) {
+            throw new \RuntimeException(
+                "Error MSP API [{$response->status()}] en {$endpoint}: " . $response->body()
+            );
+        }
 
         return $response->json('value') ?? [];
-    }
-
-    public function getTickets(string $fechaInicio, string $fechaFin): array
-    {
-        // Construir filtro OData para fechas
-        $filterOData = $this->buildDateFilter($fechaInicio, $fechaFin);
-        
-        // Obtener datos con filtros aplicados en la API
-        $tickets      = $this->getTicketsFiltered($filterOData);
-        $timeEntries  = $this->getTimeEntries();
-        $customFields = $this->getCustomFields();
-
-        if (empty($tickets)) {
-            return [];
-        }
-
-        // Indexar datos por TicketId
-        $entriesMap = $this->indexByTicketId($timeEntries);
-        $customMap  = $this->indexCustomFieldsByTicketId($customFields);
-
-        // Transformar y combinar datos
-        $result = [];
-        foreach ($tickets as $ticket) {
-            $ticketId = $ticket['TicketId'] ?? '';
-            $base = $this->transformTicket($ticket);
-
-            // Agregar custom fields
-            $base = array_merge($base, $this->extractCustomFields($customMap, $ticketId));
-
-            // Combinar con time entries
-            if (!empty($entriesMap[$ticketId])) {
-                foreach ($entriesMap[$ticketId] as $entry) {
-                    $result[] = array_merge($base, $this->transformTimeEntry($entry));
-                }
-            } else {
-                $result[] = $base;
-            }
-        }
-
-        return $result;
-    }
-
-    protected function buildDateFilter(string $fechaInicio, string $fechaFin): string
-    {
-        try {
-            $inicio = \Carbon\Carbon::parse($fechaInicio)->startOfDay()->setTimezone('UTC')->format('Y-m-d\TH:i:s\Z');
-            $fin    = \Carbon\Carbon::parse($fechaFin)->endOfDay()->setTimezone('UTC')->format('Y-m-d\TH:i:s\Z');
-            
-            return "CompletedDate ge datetime'$inicio' and CompletedDate le datetime'$fin'";
-        } catch (\Exception $e) {
-            return '';
-        }
-    }
-
-    protected function getTicketsFiltered(string $filterOData): array
-    {
-        $filter = $filterOData ? "&\$filter=$filterOData" : '';
-        $endpoint = "/ticketsview?{$filter}&\$orderby=TicketNumber desc&\$select=TicketId,TicketNumber,TicketTitle,TicketIssueTypeName,TicketSubIssueTypeName,CustomerName,LocationName,CreatedDate,CompletedDate,DueDate,UpdatedDate";
-        
-        return $this->get($endpoint);
-    }
-
-    protected function getTimeEntries(): array
-    {
-        return $this->get("/tickettimeentriesview?\$top=3000&\$orderby=TicketNumber desc&\$select=TicketId,WorkType,CustomWorkType,StartTime,EndTime,UserFirstName,UserLastName", 90);
-    }
-
-    protected function getCustomFields(): array
-    {
-        // Limitar a los últimos 5000 registros para evitar timeout
-        return $this->get("/ticketscustomfields?\$top=5000&\$orderby=TicketId desc&\$select=TicketId,Name,Value", 90);
-    }
-
-    protected function indexByTicketId(array $entries): array
-    {
-        $map = [];
-        foreach ($entries as $entry) {
-            $ticketId = $entry['TicketId'] ?? '';
-            if ($ticketId) {
-                $map[$ticketId][] = $entry;
-            }
-        }
-        return $map;
-    }
-
-    protected function indexCustomFieldsByTicketId(array $customFields): array
-    {
-        $map = [];
-        foreach ($customFields as $cf) {
-            $ticketId = $cf['TicketId'] ?? '';
-            if ($ticketId) {
-                $map[$ticketId][] = [
-                    'nombre'      => $cf['Name'] ?? '',
-                    'descripcion' => $cf['Value'] ?? '',
-                ];
-            }
-        }
-        return $map;
-    }
-
-    protected function transformTicket(array $ticket): array
-    {
-        return [
-            'ticket_id'              => $ticket['TicketId'] ?? '',
-            'ticket_number'          => $ticket['TicketNumber'] ?? '',
-            'ticket_title'           => $ticket['TicketTitle'] ?? '',
-            'ticket_issue_type'      => $ticket['TicketIssueTypeName'] ?? '',
-            'ticket_sub_issue_type'  => $ticket['TicketSubIssueTypeName'] ?? '',
-            'customer_name'          => $ticket['CustomerName'] ?? '',
-            'location_name'          => $ticket['LocationName'] ?? '',
-            'created_date'           => $this->formatDate($ticket['CreatedDate'] ?? ''),
-            'completed_date'         => $this->formatDate($ticket['CompletedDate'] ?? ''),
-            'due_date'               => $this->formatDate($ticket['DueDate'] ?? ''),
-        ];
-    }
-
-    protected function transformTimeEntry(array $entry): array
-    {
-        return [
-            'work_type'       => $entry['WorkType'] ?? '',
-            'custom_work_type' => $entry['CustomWorkType'] ?? '',
-            'start_time'      => $this->formatDate($entry['StartTime'] ?? ''),
-            'end_time'        => $this->formatDate($entry['EndTime'] ?? ''),
-            'user_first_name' => $entry['UserFirstName'] ?? '',
-            'user_last_name'  => $entry['UserLastName'] ?? '',
-        ];
-    }
-
-    protected function extractCustomFields(array $customMap, string $ticketId): array
-    {
-        $fields = [];
-        foreach ($customMap[$ticketId] ?? [] as $cf) {
-            $fields[$cf['nombre']] = $cf['descripcion'];
-        }
-        return $fields;
     }
 
     protected function formatDate(string $date): string

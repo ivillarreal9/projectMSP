@@ -59,13 +59,13 @@ Route::middleware(['auth', 'role:admin'])
         Route::get('meta-2/debug-cf', function () {
             $service = new \App\Services\Meta2Service();
             $ids     = $service->getTelefoniaIds(3, 2026);
-
-            // ✅ ID fijo para prueba
             $firstId = '81010fd2-4ca8-f011-8e61-000d3a4fe16d';
-
             $fields  = $service->debugCustomFields($firstId);
             return response()->json($fields);
         })->name('meta-2.debug-cf');
+
+        // ✅ Nueva ruta SSE — debe ir ANTES del resource
+        Route::get('meta-2/stream', [Meta2Controller::class, 'stream'])->name('admin.meta-2.stream');
 
         Route::resource('meta-2', Meta2Controller::class)->only(['index', 'create', 'store', 'edit', 'update', 'destroy']);
     });
@@ -80,8 +80,13 @@ Route::middleware(['auth', 'role:admin,editor'])
         Route::get('api-msp', [ApiMspController::class, 'index'])->name('api-msp.index');
         Route::post('api-msp/credentials', [ApiMspController::class, 'saveCredential'])->name('api-msp.credentials');
         Route::get('api-msp/export', [ApiMspController::class, 'export'])->name('api-msp.export');
-        
+        Route::get('api-msp/results', [ApiMspController::class, 'results'])->name('api-msp.results');
     });
+
+// SSE fuera del grupo — solo auth, sin session middleware que bloquea el stream
+Route::get('admin/api-msp/stream', [ApiMspController::class, 'stream'])
+    ->middleware(['auth', 'role:admin,editor'])
+    ->name('admin.api-msp.stream');
 
 // ─── Ventas ───────────────────────────────────────────────────
 Route::middleware(['auth', 'role:ventas,admin'])

@@ -401,4 +401,40 @@ class Meta2Service
         return trim(explode(' ', $value)[0]);
     }
 
+    /**
+     * Paso 2 público — para el stream SSE
+     */
+    public function getTicketsByIdsPublic(array $ids, string $search = ''): array
+    {
+        $tickets = $this->getTicketsByIds($ids);
+
+        if ($search) {
+            $s = strtolower($search);
+            $tickets = array_values(array_filter($tickets, fn($t) =>
+                str_contains(strtolower($t['TicketNumber'] ?? ''), $s) ||
+                str_contains(strtolower($t['TicketIssueTypeName'] ?? ''), $s)
+            ));
+        }
+
+        return $tickets;
+    }
+
+    /**
+     * Paso 3 público — adjunta custom fields y transforma
+     */
+    public function attachCustomFields(array $tickets): array
+    {
+        if (empty($tickets)) return [];
+
+        $ticketIds    = array_column($tickets, 'TicketId');
+        $customFields = $this->getCustomFieldsPool($ticketIds);
+
+        foreach ($tickets as &$ticket) {
+            $ticket['customFields'] = $customFields[$ticket['TicketId']]
+                ?? ['ticketId' => $ticket['TicketId']];
+        }
+        unset($ticket);
+
+        return $this->transformTickets($tickets);
+    }
 }
