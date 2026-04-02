@@ -17,7 +17,7 @@
 
                 {{-- Reportes Masivos (solo admin) --}}
                 @if(auth()->user()->isAdmin())
-                <a href="{{ route('admin.reports.index') }}"
+                <a href="{{ route('admin.msp.index') }}"
                    class="group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 hover:border-orange-400 dark:hover:border-orange-500 hover:shadow-md transition-all duration-200">
                     <div class="flex items-start justify-between mb-4">
                         <div class="w-10 h-10 bg-orange-50 dark:bg-orange-900/30 rounded-lg flex items-center justify-center group-hover:bg-orange-100 dark:group-hover:bg-orange-900/50 transition">

@@ -14,10 +14,10 @@ class OdooService
 
     public function __construct()
     {
-        $this->url = env('ODOO_URL');
-        $this->db = env('ODOO_DB');
-        $this->username = env('ODOO_USERNAME');
-        $this->apiKey = env('ODOO_API_KEY');
+        $this->url      = config('services.odoo.url')      ?? throw new \RuntimeException('ODOO_URL no está configurado.');
+        $this->db       = config('services.odoo.db')       ?? throw new \RuntimeException('ODOO_DB no está configurado.');
+        $this->username = config('services.odoo.username') ?? throw new \RuntimeException('ODOO_USERNAME no está configurado.');
+        $this->apiKey   = config('services.odoo.api_key')  ?? throw new \RuntimeException('ODOO_API_KEY no está configurado.');
     }
 
     private function call(string $service, string $method, array $args): mixed

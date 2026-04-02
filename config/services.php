@@ -41,4 +41,22 @@ return [
         'url'   => 'https://api.anthropic.com/v1',
     ],
 
+    'odoo' => [
+        'url'      => env('ODOO_URL'),
+        'db'       => env('ODOO_DB'),
+        'username' => env('ODOO_USERNAME'),
+        'api_key'  => env('ODOO_API_KEY'),
+    ],
+
+    'sharepoint' => [
+    'tenant_id'     => env('AZURE_TENANT_ID'),
+    'client_id'     => env('AZURE_CLIENT_ID'),
+    'client_secret' => env('AZURE_CLIENT_SECRET'),
+    'site_url'      => env('SHAREPOINT_SITE_URL'),
+    'folder'        => env('SHAREPOINT_FOLDER'),
+    'file'          => env('SHAREPOINT_FILE'),
+    'folder_id'     => env('SHAREPOINT_FOLDER_ID'),  // ← agregar
+
+],
+
 ];

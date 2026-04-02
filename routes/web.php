@@ -8,10 +8,14 @@ use App\Http\Controllers\Admin\SurveyController;
 use App\Http\Controllers\Admin\Meta2Controller;
 use App\Http\Controllers\Admin\Sales\SalesDashboardController;
 use App\Http\Controllers\Admin\Sales\SalesPipelineController;
+use App\Http\Controllers\Admin\ApiCustomersController;
 use App\Http\Controllers\Admin\Sales\SalesClientsController;
 use App\Http\Controllers\Admin\Sales\SalesExecutivesController;
 use App\Http\Controllers\Admin\Sales\SalesReassignController;
+use App\Http\Controllers\Admin\MspReportController;
+use App\Http\Controllers\Admin\ClientMergeController;
 use Illuminate\Support\Facades\Route;
+
 
 Route::get('/', function () {
     return view('welcome');
@@ -38,8 +42,31 @@ Route::middleware(['auth', 'role:admin'])
         Route::put('users/{user}/password', [UserController::class, 'changePassword'])
              ->name('users.password');
 
-        // Mass Reports
-        Route::resource('reports', MassReportController::class);
+
+        // ── MSP Reports ── NUEVO ──────────────────────────────────────────────
+        Route::prefix('reports/msp')->name('msp.')->group(function () {
+            Route::get('/',        [MspReportController::class, 'index'])->name('index');
+            Route::post('/upload', [MspReportController::class, 'upload'])->name('upload');
+
+            Route::get('/clientes',            [MspReportController::class, 'clientes'])->name('clientes');
+            Route::get('/clientes/{customer}', [MspReportController::class, 'clienteDetalle'])->name('clientes.detalle');
+            Route::post('/clientes/{customer}/logo', [MspReportController::class, 'uploadLogo'])->name('clientes.logo');
+            Route::post('/clientes/{customer}/update', [MspReportController::class, 'updateCliente'])->name('clientes.update');
+            
+            Route::get('/pdf/{customer}/preview',  [MspReportController::class, 'pdfPreview'])->name('pdf.preview');
+            Route::get('/pdf/{customer}/download', [MspReportController::class, 'pdfDownload'])->name('pdf.download');
+
+            Route::get('/correos',         [MspReportController::class, 'correos'])->name('correos');
+            Route::post('/correos/enviar', [MspReportController::class, 'enviarCorreo'])->name('correos.enviar');
+            Route::post('/correos/masivo', [MspReportController::class, 'enviarMasivo'])->name('correos.masivo');
+
+            Route::get('/chat',      [MspReportController::class, 'chat'])->name('chat');
+            Route::post('/chat/api', [MspReportController::class, 'chatApi'])->name('chat.api');
+            Route::get('/sharepoint',        [MspReportController::class, 'sharepointIndex'])->name('sharepoint');
+            Route::post('/sharepoint/import',[MspReportController::class, 'sharepointImport'])->name('sharepoint.import');
+            Route::post('/settings', [MspReportController::class, 'saveSettings'])->name('settings.save');
+
+        });
 
         // Surveys — export SIEMPRE antes del resource
         Route::get('surveys/token/current', [SurveyController::class, 'currentToken'])->name('surveys.token.current');
@@ -81,6 +108,13 @@ Route::middleware(['auth', 'role:admin,editor'])
         Route::post('api-msp/credentials', [ApiMspController::class, 'saveCredential'])->name('api-msp.credentials');
         Route::get('api-msp/export', [ApiMspController::class, 'export'])->name('api-msp.export');
         Route::get('api-msp/results', [ApiMspController::class, 'results'])->name('api-msp.results');
+        Route::post('api-msp/chat', [ApiMspController::class, 'chat'])->name('api-msp.chat');
+        Route::get('api-customers', [ApiCustomersController::class, 'index'])->name('api-customers.index');
+        Route::get('api-customers/fetch', [ApiCustomersController::class, 'fetch'])->name('api-customers.fetch');
+        Route::get('api-customers/export', [ApiCustomersController::class, 'export'])->name('api-customers.export');
+
+        Route::get('client-merge', [ClientMergeController::class, 'index'])->name('client-merge.index');
+        Route::post('client-merge/process', [ClientMergeController::class, 'process'])->name('client-merge.process');  
     });
 
 // SSE fuera del grupo — solo auth, sin session middleware que bloquea el stream
