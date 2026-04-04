@@ -167,12 +167,15 @@ foreach ($clasif as $label => $val) {
     next($pieColors);
     $startAngle = $end;
 }
-function svgArc($cx,$cy,$r,$startDeg,$endDeg) {
-    $s = deg2rad($startDeg); $e = deg2rad($endDeg);
-    $x1=round($cx+$r*cos($s),2); $y1=round($cy+$r*sin($s),2);
-    $x2=round($cx+$r*cos($e),2); $y2=round($cy+$r*sin($e),2);
-    $large = ($endDeg-$startDeg > 180) ? 1 : 0;
-    return "M {$cx} {$cy} L {$x1} {$y1} A {$r} {$r} 0 {$large} 1 {$x2} {$y2} Z";
+// Después
+if (!function_exists('svgArc')) {
+    function svgArc($cx,$cy,$r,$startDeg,$endDeg) {
+        $s = deg2rad($startDeg); $e = deg2rad($endDeg);
+        $x1=round($cx+$r*cos($s),2); $y1=round($cy+$r*sin($s),2);
+        $x2=round($cx+$r*cos($e),2); $y2=round($cy+$r*sin($e),2);
+        $large = ($endDeg-$startDeg > 180) ? 1 : 0;
+        return "M {$cx} {$cy} L {$x1} {$y1} A {$r} {$r} 0 {$large} 1 {$x2} {$y2} Z";
+    }
 }
 $barMaxH = 80;
 $semanasKeys = collect($alarmaS)->keys()->sort()->values();
@@ -239,19 +242,27 @@ $semanasKeys = collect($alarmaS)->keys()->sort()->values();
                         $l2x = round(80 + $lineR2 * cos(deg2rad($midAngle)), 2);
                         $l2y = round(80 + $lineR2 * sin(deg2rad($midAngle)), 2);
                     @endphp
-                    {{-- Segmento del pie --}}
-                    <path d="{{ svgArc(80,80,44,$seg['start'],$seg['end']) }}"
-                        fill="{{ $seg['color'] }}" stroke="white" stroke-width="1.5"/>
-                    {{-- Línea hacia afuera --}}
-                    <line x1="{{ $l1x }}" y1="{{ $l1y }}"
-                        x2="{{ $l2x }}" y2="{{ $l2y }}"
-                        stroke="{{ $seg['color'] }}" stroke-width="1.2"/>
-                    {{-- Número afuera --}}
-                    <text x="{{ $lx }}" y="{{ $ly }}"
-                        text-anchor="middle" font-size="10"
-                        fill="{{ $seg['color'] }}" font-weight="bold">
-                        {{ $seg['val'] }}
-                    </text>
+                   {{-- Segmento del pie --}}
+                    @if(count($pieSegments) === 1)
+                        <circle cx="80" cy="80" r="44"
+                            fill="{{ $seg['color'] }}" stroke="white" stroke-width="1.5"/>
+                        <text x="80" y="34"
+                            text-anchor="middle" font-size="10"
+                            fill="{{ $seg['color'] }}" font-weight="bold">
+                            {{ $seg['val'] }}
+                        </text>
+                    @else
+                        <path d="{{ svgArc(80,80,44,$seg['start'],$seg['end']) }}"
+                            fill="{{ $seg['color'] }}" stroke="white" stroke-width="1.5"/>
+                        <line x1="{{ $l1x }}" y1="{{ $l1y }}"
+                            x2="{{ $l2x }}" y2="{{ $l2y }}"
+                            stroke="{{ $seg['color'] }}" stroke-width="1.2"/>
+                        <text x="{{ $lx }}" y="{{ $ly }}"
+                            text-anchor="middle" font-size="10"
+                            fill="{{ $seg['color'] }}" font-weight="bold">
+                            {{ $seg['val'] }}
+                        </text>
+                    @endif
                     @endif
                 @endforeach
             </svg>

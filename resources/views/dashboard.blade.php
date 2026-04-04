@@ -85,27 +85,7 @@
                 @endif
 
                 {{-- Encuesta de Satisfacción (solo admin) --}}
-                @if(auth()->user()->isAdmin())
-                <a href="{{ route('admin.surveys.index') }}"
-                   class="group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 hover:border-sky-400 dark:hover:border-sky-500 hover:shadow-md transition-all duration-200">
-                    <div class="flex items-start justify-between mb-4">
-                        <div class="w-10 h-10 bg-sky-50 dark:bg-sky-900/30 rounded-lg flex items-center justify-center group-hover:bg-sky-100 dark:group-hover:bg-sky-900/50 transition">
-                            <svg class="w-5 h-5 text-sky-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
-                            </svg>
-                        </div>
-                        <svg class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-sky-400 transition" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                        </svg>
-                    </div>
-                    <h3 class="text-sm font-semibold text-gray-800 dark:text-gray-200 group-hover:text-sky-600 dark:group-hover:text-sky-400 transition">
-                        Encuesta de Satisfacción
-                    </h3>
-                    <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                        Gestión y resultados de encuestas
-                    </p>
-                </a>
-                @endif
+
 
                 {{-- META 2 (solo admin) --}}
                 @if(auth()->user()->isAdmin())

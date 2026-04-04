@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Imports\MspReportsImport;
 use App\Models\MspReport;
+use App\Models\MspClient;
 use App\Models\MspUploadBatch;
 use App\Services\SharePointService;  // ← AGREGAR ESTA LÍNEA
 use Illuminate\Http\Request;
@@ -73,19 +74,44 @@ class MspReportController extends Controller
         $periodo  = $request->input('periodo', $periodos[0] ?? null);
         $search   = $request->input('search', '');
 
-        $query = MspReport::query()
-            ->select('customer_name', 'email_cliente', 'logo_path',
+        // Obtener nombres únicos del período con stats
+        $statsQuery = MspReport::query()
+            ->select(
+                'customer_name',
                 DB::raw('COUNT(*) as total_tickets'),
                 DB::raw("SUM(CASE WHEN tipo_ticket = 'Incidente' THEN 1 ELSE 0 END) as incidentes"),
                 DB::raw("SUM(CASE WHEN tipo_ticket = 'Solicitud' THEN 1 ELSE 0 END) as solicitudes"),
                 DB::raw('AVG(tiempo_vida_ticket) as tiempo_prom')
             )
-            ->groupBy('customer_name', 'email_cliente', 'logo_path');
+            ->groupBy('customer_name');
 
-        if ($periodo) $query->where('periodo', $periodo);
-        if ($search)  $query->where('customer_name', 'like', "%{$search}%");
+        if ($periodo) $statsQuery->where('periodo', $periodo);
 
-        $clientes = $query->orderBy('customer_name')->paginate(30)->withQueryString();
+        $statsMap = $statsQuery->get()->keyBy('customer_name');
+
+        // Consultar msp_clients para info del cliente
+        $clientesQuery = MspClient::query();
+
+        if ($search) {
+            $clientesQuery->where('customer_name', 'like', "%{$search}%");
+        }
+
+        // Solo mostrar clientes que tienen registros en el período
+        if ($periodo) {
+            $clientesQuery->whereIn('customer_name', $statsMap->keys());
+        }
+
+        $clientes = $clientesQuery->orderBy('customer_name')->paginate(30)->withQueryString();
+
+        // Agregar stats a cada cliente
+        $clientes->getCollection()->transform(function ($cliente) use ($statsMap) {
+            $stats = $statsMap->get($cliente->customer_name);
+            $cliente->total_tickets = $stats?->total_tickets ?? 0;
+            $cliente->incidentes    = $stats?->incidentes ?? 0;
+            $cliente->solicitudes   = $stats?->solicitudes ?? 0;
+            $cliente->tiempo_prom   = $stats?->tiempo_prom ?? 0;
+            return $cliente;
+        });
 
         return view('admin.reports.msp.clientes', compact('clientes', 'periodos', 'periodo', 'search'));
     }
@@ -96,11 +122,9 @@ class MspReportController extends Controller
         $periodo     = $request->input('periodo');
         $stats       = MspReport::statsForCustomer($customer, $periodo);
         $periodos    = MspReport::uniquePeriodos();
-        $clienteInfo = MspReport::where('customer_name', $customer)
-                        ->select('email_cliente', 'logo_path', 'numero_cuenta')
-                        ->first();
+        $clienteInfo = MspClient::where('customer_name', $customer)->first();
 
-        return view('admin.reports.msp.cliente_detalle', 
+        return view('admin.reports.msp.cliente_detalle',
             compact('customer', 'stats', 'periodos', 'periodo', 'clienteInfo'));
     }
 
@@ -148,13 +172,17 @@ class MspReportController extends Controller
 
     public function correos(Request $request)
     {
-        $periodos  = MspReport::uniquePeriodos();
-        $periodo   = $request->input('periodo', $periodos[0] ?? null);
+        $periodos = MspReport::uniquePeriodos();
+        $periodo  = $request->input('periodo', $periodos[0] ?? null);
 
-        $clientes = MspReport::query()
-            ->select('customer_name', 'email_cliente')
+        // Obtener clientes del período desde msp_reports
+        $customerNames = MspReport::query()
             ->where('periodo', $periodo)
             ->distinct()
+            ->pluck('customer_name');
+
+        // Traer info desde msp_clients
+        $clientes = MspClient::whereIn('customer_name', $customerNames)
             ->orderBy('customer_name')
             ->get();
 
@@ -340,26 +368,10 @@ Para cualquier otra consulta responde en español de forma clara y concisa.";
     // =========================================================================
     // Helpers
     // =========================================================================
-
     private function resolveLogoUrl(string $customer, ?string $periodo): ?string
     {
-        $logo = MspReport::where('customer_name', $customer)
-            ->when($periodo, fn($q) => $q->where('periodo', $periodo))
-            ->whereNotNull('logo_path')
-            ->where('logo_path', '!=', '')
-            ->value('logo_path');
-
-        if ($logo) {
-            $fullPath = storage_path('app/public/' . $logo);
-            if (file_exists($fullPath)) {
-                // Convertir a base64 para que Browsershot pueda usarlo
-                $mime    = mime_content_type($fullPath);
-                $base64  = base64_encode(file_get_contents($fullPath));
-                return "data:{$mime};base64,{$base64}";
-            }
-        }
-
-        return null;
+        $cliente = MspClient::where('customer_name', $customer)->first();
+        return $cliente?->getLogoBase64();
     }
 
     public function sharepointIndex(Request $request)
@@ -458,7 +470,7 @@ Para cualquier otra consulta responde en español de forma clara y concisa.";
 
     public function updateCliente(Request $request, string $customer)
     {
-        $customer = urldecode($customer); // ← CLAVE
+        $customer = urldecode($customer);
 
         $request->validate([
             'email_cliente' => 'nullable|email|max:255',
@@ -471,14 +483,19 @@ Para cualquier otra consulta responde en español de forma clara y concisa.";
             'numero_cuenta' => $request->input('numero_cuenta'),
         ];
 
+        // Subir logo si se envió
         if ($request->hasFile('logo')) {
             $path = $request->file('logo')->store('logos/clientes', 'public');
             $data['logo_path'] = $path;
         }
 
-        $affected = \App\Models\MspReport::where('customer_name', $customer)->update($data);
+        // Guardar en msp_clients (fuente de verdad)
+        MspClient::updateOrCreate(
+            ['customer_name' => $customer],
+            array_filter($data, fn($v) => $v !== null)
+        );
 
-        return back()->with('success', "✅ {$affected} registros actualizados.");
+        return back()->with('success', '✅ Información del cliente actualizada correctamente.');
     }
     
 }

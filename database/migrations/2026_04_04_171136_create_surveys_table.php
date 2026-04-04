@@ -6,25 +6,21 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         Schema::create('surveys', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('survey_type_id')
+                  ->constrained('survey_types')
+                  ->cascadeOnDelete();
             $table->string('fecha')->nullable();
             $table->string('numero_whatsapp')->nullable();
             $table->string('nombre')->nullable();
-            $table->string('satisfaccion')->nullable();
-            $table->string('recomendacion')->nullable();
+            $table->json('data')->nullable(); // {"satisfaccion":"5","recomendacion":"si"}
             $table->timestamps();
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('surveys');

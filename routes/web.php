@@ -4,7 +4,6 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\MassReportController;
 use App\Http\Controllers\Admin\ApiMspController;
-use App\Http\Controllers\Admin\SurveyController;
 use App\Http\Controllers\Admin\Meta2Controller;
 use App\Http\Controllers\Admin\Sales\SalesDashboardController;
 use App\Http\Controllers\Admin\Sales\SalesPipelineController;
@@ -14,6 +13,8 @@ use App\Http\Controllers\Admin\Sales\SalesExecutivesController;
 use App\Http\Controllers\Admin\Sales\SalesReassignController;
 use App\Http\Controllers\Admin\MspReportController;
 use App\Http\Controllers\Admin\ClientMergeController;
+use App\Http\Controllers\Admin\SurveyTypeController;
+use App\Http\Controllers\Admin\SurveyController;
 use Illuminate\Support\Facades\Route;
 
 
@@ -68,11 +69,12 @@ Route::middleware(['auth', 'role:admin'])
 
         });
 
-        // Surveys — export SIEMPRE antes del resource
-        Route::get('surveys/token/current', [SurveyController::class, 'currentToken'])->name('surveys.token.current');
-        Route::post('surveys/token', [SurveyController::class, 'generateToken'])->name('surveys.token');
-        Route::get('surveys/export', [SurveyController::class, 'export'])->name('surveys.export');
-        Route::resource('surveys', SurveyController::class)->only(['index']);
+        // Surveys
+        Route::get('surveys', [SurveyTypeController::class, 'index'])->name('surveys.index');
+        Route::post('survey-types', [SurveyTypeController::class, 'store'])->name('survey-types.store');
+        Route::delete('survey-types/{surveyType}', [SurveyTypeController::class, 'destroy'])->name('survey-types.destroy');
+        Route::get('surveys/{slug}', [SurveyController::class, 'show'])->name('surveys.show');
+        Route::get('surveys/{slug}/export', [SurveyController::class, 'export'])->name('surveys.export');
 
         // META 2
         Route::get('meta-2/pdf-preview', function () {
@@ -92,7 +94,7 @@ Route::middleware(['auth', 'role:admin'])
         })->name('meta-2.debug-cf');
 
         // ✅ Nueva ruta SSE — debe ir ANTES del resource
-        Route::get('meta-2/stream', [Meta2Controller::class, 'stream'])->name('admin.meta-2.stream');
+        Route::get('meta-2/stream', [Meta2Controller::class, 'stream'])->name('meta-2.stream');
 
         Route::resource('meta-2', Meta2Controller::class)->only(['index', 'create', 'store', 'edit', 'update', 'destroy']);
     });

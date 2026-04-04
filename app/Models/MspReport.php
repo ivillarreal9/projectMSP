@@ -77,15 +77,32 @@ class MspReport extends Model
 
     public static function uniqueCustomers(?string $periodo = null): array
     {
-        $q = static::query()->select('customer_name', 'email_cliente', 'logo_path')
+        // Obtener nombres únicos del período
+        $query = static::query()
+            ->select('customer_name')
             ->distinct();
-        if ($periodo) $q->where('periodo', $periodo);
-        return $q->orderBy('customer_name')->get()->toArray();
+
+        if ($periodo) {
+            $query->where('periodo', $periodo);
+        }
+
+        $customerNames = $query->pluck('customer_name');
+
+        // Traer info desde msp_clients
+        return MspClient::whereIn('customer_name', $customerNames)
+            ->orderBy('customer_name')
+            ->get()
+            ->toArray();
     }
 
     public static function uniquePeriodos(): array
     {
         return static::query()->select('periodo')->distinct()
             ->whereNotNull('periodo')->orderBy('periodo')->pluck('periodo')->toArray();
+    }
+
+    public function client()
+    {
+        return $this->belongsTo(MspClient::class, 'customer_name', 'customer_name');
     }
 }
