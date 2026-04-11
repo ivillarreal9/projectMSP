@@ -110,6 +110,29 @@
                 </a>
                 @endif
 
+                {{-- Encuesta de Satisfacción (solo admin) --}}
+                @if(auth()->user()->isAdmin())
+                <a href="{{ route('admin.surveys.index') }}"
+                class="group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 hover:border-violet-400 dark:hover:border-violet-500 hover:shadow-md transition-all duration-200">
+                    <div class="flex items-start justify-between mb-4">
+                        <div class="w-10 h-10 bg-violet-50 dark:bg-violet-900/30 rounded-lg flex items-center justify-center group-hover:bg-violet-100 dark:group-hover:bg-violet-900/50 transition">
+                            <svg class="w-5 h-5 text-violet-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2M12 11v4m-2-2h4"/>
+                            </svg>
+                        </div>
+                        <svg class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-violet-400 transition" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                        </svg>
+                    </div>
+                    <h3 class="text-sm font-semibold text-gray-800 dark:text-gray-200 group-hover:text-violet-600 dark:group-hover:text-violet-400 transition">
+                        Encuestas
+                    </h3>
+                    <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                        Satisfacción de clientes vía WhatsApp
+                    </p>
+                </a>
+                @endif
+
                 @if(auth()->user()->isVentas())
                 <a href="{{ route('admin.sales.index') }}"
                 class="group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 hover:border-purple-400 dark:hover:border-purple-500 hover:shadow-md transition-all duration-200">

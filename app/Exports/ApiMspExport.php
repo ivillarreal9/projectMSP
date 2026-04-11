@@ -19,8 +19,23 @@ class ApiMspExport implements FromArray, WithHeadings, WithStyles, ShouldAutoSiz
 
     public function __construct(array $data)
     {
-        $this->data    = $data;
-        $this->headers = !empty($data) ? array_keys($data[0]) : [];
+        // Recopilar TODAS las keys de TODOS los tickets (no solo del primero)
+        $allKeys = [];
+        foreach ($data as $row) {
+            foreach (array_keys($row) as $key) {
+                $allKeys[$key] = true;
+            }
+        }
+        $this->headers = array_keys($allKeys);
+
+        // Normalizar cada fila: misma cantidad de columnas, mismo orden
+        $this->data = array_map(function ($row) {
+            $normalized = [];
+            foreach ($this->headers as $key) {
+                $normalized[$key] = $row[$key] ?? null;
+            }
+            return $normalized;
+        }, $data);
     }
 
     public function title(): string

@@ -89,11 +89,10 @@ class Meta2Controller extends Controller
     }
 
     public function stream(Request $request)
-        {
-        $month = (int) $request->get('month');
-        $year  = (int) $request->get('year');
-        $search = $request->get('search', '');
-
+    {
+        $month  = (int) $request->get('month');
+        $year   = (int) $request->get('year');
+        $search = (string) $request->get('search', '');
         if (!$month || !$year) {
             abort(400, 'Mes y año requeridos.');
         }
@@ -108,39 +107,143 @@ class Meta2Controller extends Controller
             };
 
             try {
-                // ── Paso 1 ──────────────────────────────────────────
+                // Paso 1
                 $send('step', ['step' => 1, 'message' => 'Obteniendo IDs del período...']);
                 $ids = $this->meta2Service->getTelefoniaIds($month, $year);
+                $send('step', ['step' => 1, 'message' => count($ids) . ' tickets encontrados.', 'done' => true]);
 
                 if (empty($ids)) {
-                    $send('done', ['html' => '<div class="empty">Sin tickets en ese período.</div>']);
+                    $send('done', ['html' => '', 'total' => 0]);
                     return;
                 }
 
-                $send('step', ['step' => 1, 'message' => count($ids) . ' tickets encontrados.', 'done' => true]);
-
-                // ── Paso 2 ──────────────────────────────────────────
+                // Paso 2
                 $send('step', ['step' => 2, 'message' => 'Trayendo detalle de tickets...']);
                 $tickets = $this->meta2Service->getTicketsByIdsPublic($ids, $search);
-                $send('step', ['step' => 2, 'message' => 'Detalle cargado.', 'done' => true]);
+                $send('step', ['step' => 2, 'message' => count($tickets) . ' tickets cargados.', 'done' => true]);
 
-                // ── Paso 3 ──────────────────────────────────────────
+                // Paso 3
                 $send('step', ['step' => 3, 'message' => 'Cargando campos personalizados...']);
                 $result = $this->meta2Service->attachCustomFields($tickets);
                 $send('step', ['step' => 3, 'message' => 'Campos cargados.', 'done' => true]);
 
-                // ── HTML final ──────────────────────────────────────
+                // Resultado final
                 $html = view('admin.meta-2._table', ['tickets' => $result])->render();
-                $send('done', ['html' => $html]);
+                $send('done', ['html' => $html, 'total' => count($result)]);
 
-            } catch (\Exception $e) {
-                $send('error', ['message' => $e->getMessage()]);
+            } catch (\Throwable $e) {
+                // ← Throwable captura también errores fatales, no solo Exception
+                $send('error', [
+                    'message' => $e->getMessage(),
+                    'file'    => $e->getFile(),
+                    'line'    => $e->getLine(),
+                ]);
             }
 
         }, 200, [
             'Content-Type'      => 'text/event-stream',
             'Cache-Control'     => 'no-cache',
-            'X-Accel-Buffering' => 'no',   // Nginx: desactiva buffer
+            'X-Accel-Buffering' => 'no',
         ]);
+    }
+    
+    public function exportExcel(Request $request)
+    {
+        $month = (int) $request->get('month');
+        $year  = (int) $request->get('year');
+
+        if (!$month || !$year) {
+            return back()->with('error', 'Debes seleccionar mes y año.');
+        }
+
+        $tickets = $this->meta2Service->getTelefoniaTickets('', $month, $year);
+
+        if (empty($tickets)) {
+            return back()->with('error', 'No hay tickets para exportar en ese período.');
+        }
+
+        // ── Crear el spreadsheet ──────────────────────────────────────────────
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet       = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('META 2 - Telefonía');
+
+        // ── Encabezados ───────────────────────────────────────────────────────
+        // Columnas fijas
+        $fixedHeaders = ['Ticket #', 'Tipo', 'Creado', 'Completado'];
+
+        // Columnas dinámicas — sacar las keys de custom_fields del primer ticket
+        $customKeys = [];
+        foreach ($tickets as $ticket) {
+            foreach (array_keys($ticket['custom_fields'] ?? []) as $key) {
+                if (!in_array($key, ['ticketId', 'ticket_id']) && !in_array($key, $customKeys)) {
+                    $customKeys[] = $key;
+                }
+            }
+        }
+
+        $headers = array_merge($fixedHeaders, $customKeys);
+
+        // Escribir encabezados
+        foreach ($headers as $col => $header) {
+            $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col + 1) . '1';
+            $sheet->setCellValue($cell, $header);
+        }
+
+        // Estilo encabezados
+        $lastCol = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(count($headers));
+        $sheet->getStyle("A1:{$lastCol}1")->applyFromArray([
+            'font'      => ['bold' => true, 'color' => ['argb' => 'FFFFFFFF']],
+            'fill'      => ['fillType' => 'solid', 'startColor' => ['argb' => 'FF1E3A5F']],
+            'alignment' => ['horizontal' => 'center'],
+        ]);
+
+        // ── Filas de datos ────────────────────────────────────────────────────
+        foreach ($tickets as $rowIndex => $ticket) {
+            $row = $rowIndex + 2; // fila 1 = encabezados
+
+            $fixedValues = [
+                $ticket['ticket_number']  ?? '',
+                $ticket['issue_type']     ?? '',
+                $ticket['created_date']   ?? '',
+                $ticket['completed_date'] ?? '',
+            ];
+
+            $customValues = array_map(
+                fn($key) => $ticket['custom_fields'][$key] ?? '',
+                $customKeys
+            );
+
+            $values = array_merge($fixedValues, $customValues);
+
+            foreach ($values as $col => $value) {
+                $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col + 1) . $row;
+                $sheet->setCellValue($cell, $value);
+            }
+
+            // Filas alternas con color
+            if ($rowIndex % 2 === 0) {
+                $sheet->getStyle("A{$row}:{$lastCol}{$row}")->applyFromArray([
+                    'fill' => ['fillType' => 'solid', 'startColor' => ['argb' => 'FFF0F4FF']],
+                ]);
+            }
+        }
+
+        // Auto-ancho de columnas
+        foreach (range(1, count($headers)) as $col) {
+            $sheet->getColumnDimensionByColumn($col)->setAutoSize(true);
+        }
+
+        // ── Generar archivo y descargar ───────────────────────────────────────
+        $monthName = \Carbon\Carbon::createFromDate($year, $month, 1)->locale('es')->monthName;
+        $filename  = "meta2-telefonia-{$monthName}-{$year}.xlsx";
+
+        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header("Content-Disposition: attachment; filename=\"{$filename}\"");
+        header('Cache-Control: max-age=0');
+
+        $writer->save('php://output');
+        exit;
     }
 }

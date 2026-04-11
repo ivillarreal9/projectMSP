@@ -36,20 +36,18 @@ class SurveyType extends Model
     public function snippet(): string
     {
         $webhook = url("/api/surveys/{$this->token}");
-        $campos  = collect($this->campos)
-            ->map(fn($c) => "  \"{$c}\": \"{{{{ {$c} }}}}\"")
+
+        $campos = collect($this->campos)
+            ->map(fn($c) => "    \"{$c}\": \"{{{$c}}}\"")
             ->implode(",\n");
 
         return <<<CURL
-POST {$webhook}
-Authorization: Bearer {TOKEN_AQUI}
-Content-Type: application/json
-
-{
-  "numero_whatsapp": "{{{{ numero_whatsapp }}}}",
-  "nombre": "{{{{ nombre }}}}",
-{$campos}
-}
-CURL;
+    curl -X POST "{$webhook}" \\
+    -H "Authorization: Bearer {API_TOKEN}" \\
+    -H "Content-Type: application/json" \\
+    -d '{
+    {$campos}
+    }'
+    CURL;
     }
 }

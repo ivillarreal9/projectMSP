@@ -19,7 +19,19 @@ class Meta2Service
         'ce7251d4-ad9a-ee11-bea0-0022482ddcd2',  // Detalle - Reporte 2
         'cf7251d4-ad9a-ee11-bea0-0022482ddcd2',  // Reporte 1
         'c096b751-9cd1-ee11-85f7-00224835853a',  // Provincia
-        '7b1b9b04-9dd1-ee11-85f7-00224835853a',  // Telefonia 
+        '7b1b9b04-9dd1-ee11-85f7-00224835853a',  // Telefonia
+        'cd7251d4-ad9a-ee11-bea0-0022482ddcd2',  // Solucion - Acción
+    ];
+
+    /**
+     * Campos donde solo queremos extraer el código (primera palabra)
+     */
+    protected array $codeFields = [
+        'Reporte 1',
+        'Detalle - Reporte 2',
+        'Causa',
+        'Ubicación',
+        'Solución - Acción',
     ];
 
     public function __construct()
@@ -85,12 +97,28 @@ class Meta2Service
     }
 
     /**
+     * Determinar si un campo debe mostrar solo el código
+     */
+    protected function isCodeField(string $name): bool
+    {
+        if (in_array($name, $this->codeFields)) {
+            return true;
+        }
+
+        // Fallback: captura variaciones de tildes/guiones
+        $lower = mb_strtolower($name);
+        return str_starts_with($lower, 'soluc')
+            || str_starts_with($lower, 'causa')
+            || str_starts_with($lower, 'ubicac')
+            || str_starts_with($lower, 'reporte')
+            || str_starts_with($lower, 'detalle');
+    }
+
+    /**
      * Paso 3 — Custom fields en paralelo con Http::pool
-     * Hace todas las peticiones al mismo tiempo en vez de una por una
      */
     protected function getCustomFieldsPool(array $ticketIds): array
     {
-        $codeFields = ['Reporte 1', 'Detalle - Reporte 2', 'Causa', 'Ubicación'];
         if (empty($ticketIds)) return [];
 
         $result      = [];
@@ -119,7 +147,6 @@ class Meta2Service
                 $rawFields = [];
 
                 if ($response instanceof \Illuminate\Http\Client\Response && $response->successful()) {
-                    // ✅ Sin wrapper 'value'
                     $rawFields = $response->json() ?? [];
                 }
 
@@ -129,8 +156,7 @@ class Meta2Service
                     $value = $field['Value'] ?? $field['value'] ?? '';
 
                     if ($name) {
-                        // Extraer solo código en campos específicos
-                        $flat[$name] = in_array($name, $codeFields)
+                        $flat[$name] = $this->isCodeField($name)
                             ? $this->extractCode((string)$value)
                             : ($value ?? '');
                     }
@@ -154,15 +180,12 @@ class Meta2Service
     {
         if (!$month || !$year) return [];
 
-        // Paso 1 — IDs del período
         $ids = $this->getTelefoniaIds($month, $year);
 
         if (empty($ids)) return [];
 
-        // Paso 2 — detalle de tickets con esos IDs
         $tickets = $this->getTicketsByIds($ids);
 
-        // Filtro de búsqueda local sobre resultados
         if ($search) {
             $s       = strtolower($search);
             $tickets = array_values(array_filter($tickets, fn($t) =>
@@ -173,11 +196,9 @@ class Meta2Service
 
         if (empty($tickets)) return [];
 
-        // Paso 3 — custom fields en paralelo
         $ticketIds    = array_column($tickets, 'TicketId');
         $customFields = $this->getCustomFieldsPool($ticketIds);
 
-        // Combinar tickets con sus custom fields
         foreach ($tickets as &$ticket) {
             $ticket['customFields'] = $customFields[$ticket['TicketId']] ?? ['ticketId' => $ticket['TicketId']];
         }
@@ -253,7 +274,6 @@ class Meta2Service
                 $cf   = $customFields[$t['TicketId']] ?? [];
                 $prov = trim($cf['Provincia'] ?? '');
 
-                // ✅ Solo contar si tiene provincia real
                 if ($prov !== '') {
                     $pendingByProv[$prov] = ($pendingByProv[$prov] ?? 0) + 1;
                 }
@@ -266,13 +286,12 @@ class Meta2Service
         foreach ($completedTickets as $ticket) {
             $prov = trim($ticket['customFields']['Provincia'] ?? '');
 
-            // ✅ Ignorar tickets sin provincia — data dormida
             if ($prov === '') continue;
 
             $byProvince[$prov][] = $ticket;
         }
 
-        // Calcular resumen — solo provincias con data real
+        // Calcular resumen
         $summary = [];
 
         foreach ($byProvince as $prov => $tickets) {
@@ -331,11 +350,8 @@ class Meta2Service
         );
     }
 
-
     public function debugCustomFields(string $ticketId): array
     {
-        $codeFields = ['Reporte 1', 'Detalle - Reporte 2', 'Causa', 'Ubicación'];
-
         $fieldFilter = $this->buildFieldFilter();
 
         $fields = $this->getRaw(
@@ -351,7 +367,7 @@ class Meta2Service
             $value = $field['Value'] ?? $field['value'] ?? '';
 
             if ($name) {
-                $result['aplanado'][$name] = in_array($name, $codeFields)
+                $result['aplanado'][$name] = $this->isCodeField($name)
                     ? $this->extractCode((string)$value)
                     : ($value ?? '');
             }
@@ -371,7 +387,6 @@ class Meta2Service
 
         if ($response->failed()) return [];
 
-        // Devuelve el JSON completo sin buscar 'value'
         return $response->json() ?? [];
     }
 

@@ -75,6 +75,7 @@ Route::middleware(['auth', 'role:admin'])
         Route::delete('survey-types/{surveyType}', [SurveyTypeController::class, 'destroy'])->name('survey-types.destroy');
         Route::get('surveys/{slug}', [SurveyController::class, 'show'])->name('surveys.show');
         Route::get('surveys/{slug}/export', [SurveyController::class, 'export'])->name('surveys.export');
+        Route::post('surveys/token', [SurveyController::class, 'generateToken'])->name('surveys.token');
 
         // META 2
         Route::get('meta-2/pdf-preview', function () {
@@ -84,6 +85,7 @@ Route::middleware(['auth', 'role:admin'])
         })->name('meta-2.pdf-preview');
 
         Route::get('meta-2/export-pdf', [Meta2Controller::class, 'exportPdf'])->name('meta-2.export-pdf');
+        Route::get('meta-2/export-excel', [Meta2Controller::class, 'exportExcel'])->name('meta-2.export-excel');
 
         Route::get('meta-2/debug-cf', function () {
             $service = new \App\Services\Meta2Service();

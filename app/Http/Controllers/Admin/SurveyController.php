@@ -38,4 +38,38 @@ class SurveyController extends Controller
             'encuestas-' . $type->slug . '-' . now()->format('Y-m-d') . '.xlsx'
         );
     }
+
+    public function generateToken()
+    {
+        $user = auth()->user();
+        $user->tokens()->delete();
+        $token = $user->createToken('api-surveys')->plainTextToken;
+
+        return response()->json(['token' => $token]);
+    }
+
+    // ← NUEVO: recibe respuestas del bot via API
+    public function storeByToken(Request $request, string $token)
+    {
+        $type = SurveyType::where('token', $token)
+                          ->where('activo', true)
+                          ->firstOrFail();
+
+        $data = [];
+        foreach ($type->campos as $campo) {
+            if ($request->filled($campo)) {
+                $data[$campo] = $request->input($campo);
+            }
+        }
+
+        Survey::create([
+            'survey_type_id'  => $type->id,
+            'fecha'           => now()->toDateString(),
+            'numero_whatsapp' => $request->numero_whatsapp,
+            'nombre'          => $request->nombre ?? 'Sin nombre',
+            'data'            => $data,
+        ]);
+
+        return response()->json(['message' => 'Encuesta guardada.'], 201);
+    }
 }

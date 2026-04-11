@@ -41,11 +41,10 @@ class OdooService
 
     public function login(): ?int
     {
-        return Cache::remember('odoo_uid', 3600, fn() =>
-            $this->call('common', 'login', [
-                $this->db, $this->username, $this->apiKey
-            ])
-        );
+        // Sin caché — Odoo sessions expiran rápido
+        return $this->call('common', 'login', [
+            $this->db, $this->username, $this->apiKey
+        ]);
     }
 
     private function execute(string $model, string $method, array $args = [], array $kwargs = []): mixed
@@ -93,16 +92,29 @@ class OdooService
 
     // ── Pipeline ──────────────────────────────────────────────
 
-    public function getPipeline(): array
+    public function getPipeline(string $userId = '', string $state = '', int $limit = 50, int $offset = 0): array
     {
-        return $this->execute('sale.order', 'search_read',
-            [[['state', 'in', ['draft', 'sent']]]],
-            [
-                'fields' => ['name', 'partner_id', 'user_id', 'amount_total', 'state', 'date_order', 'validity_date'],
-                'order'  => 'date_order desc',
-                'limit'  => 50,
-            ]
-        ) ?? [];
+        $domain = [['state', 'in', ['draft', 'sent']]];
+    
+        if ($userId !== '') {
+            $domain[] = ['user_id', '=', (int) $userId];
+        }
+        if ($state !== '') {
+            $domain[] = ['state', '=', $state];
+        }
+    
+        $kwargs = [
+            'fields' => ['name', 'partner_id', 'user_id', 'amount_total', 'state', 'date_order', 'validity_date'],
+            'order'  => 'date_order desc',
+        ];
+    
+        // limit 0 = sin límite (para export CSV)
+        if ($limit > 0) {
+            $kwargs['limit']  = $limit;
+            $kwargs['offset'] = $offset;
+        }
+    
+        return $this->execute('sale.order', 'search_read', [$domain], $kwargs) ?? [];
     }
 
     // ── Clientes ──────────────────────────────────────────────
@@ -123,14 +135,25 @@ class OdooService
 
     public function getExecutives(): array
     {
+        $ids = config('sales.executive_ids', []);
+    
+        if (empty($ids)) return [];
+    
         return $this->execute('res.users', 'search_read',
-            [[['share', '=', false], ['active', '=', true]]],
+            [[['id', 'in', $ids]]],
             [
-                'fields' => ['name', 'email', 'sale_team_id'],
-                'limit'  => 50,
+                'fields' => [
+                    'id', 'name', 'email',
+                    'sale_team_id',
+                    'phone', 'mobile',
+                    'image_128',
+                ],
+                'order' => 'name asc',
+                'limit' => 50,
             ]
         ) ?? [];
     }
+ 
 
     public function getMetricsByExecutive(int $userId): array
     {
@@ -142,23 +165,48 @@ class OdooService
         return compact('leads', 'won', 'pipeline', 'noContact');
     }
 
-    // ── Reasignación ──────────────────────────────────────────
-
     public function getClientsForReassign(int $days = 60): array
     {
-        $cutoff = now()->subDays($days)->format('Y-m-d');
-
         return $this->execute('res.partner', 'search_read',
             [[
-                ['customer_rank', '>', 0],
-                ['is_company', '=', true],
-                ['date_last_invoice', '<', $cutoff],
+                ['is_ovni_client', '=', true],
+                ['user_id', '!=', false],
             ]],
             [
-                'fields' => ['name', 'user_id', 'date_last_invoice', 'customer_rank', 'activity_date_deadline'],
-                'order'  => 'date_last_invoice asc',
-                'limit'  => 200,
+                'fields' => ['name', 'user_id', 'customer_rank', 
+                            'activity_date_deadline', 'creation_date'],
+                'order'  => 'creation_date asc',
+                'limit'  => 2000,
             ]
         ) ?? [];
     }
+
+    public function countPipeline(string $userId = '', string $state = ''): int
+    {
+        $domain = [['state', 'in', ['draft', 'sent']]];
+    
+        if ($userId !== '') {
+            $domain[] = ['user_id', '=', (int) $userId];
+        }
+        if ($state !== '') {
+            $domain[] = ['state', '=', $state];
+        }
+    
+        return $this->execute('sale.order', 'search_count', [$domain]) ?? 0;
+    }
+    
+    // ── Solo montos para la gráfica (siempre sin filtros) ────────
+    
+    public function getPipelineForChart(): array
+    {
+        return $this->execute('sale.order', 'search_read',
+            [[['state', 'in', ['draft', 'sent']]]],
+            [
+                'fields' => ['state', 'amount_total'],
+                'limit'  => 0,
+            ]
+        ) ?? [];
+    }
+
+
 }
