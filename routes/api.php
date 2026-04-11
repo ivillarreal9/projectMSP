@@ -1,8 +1,8 @@
 <?php
 
-use App\Http\Controllers\Admin\SurveyController;
 use Illuminate\Support\Facades\Route;
-
 use App\Http\Controllers\Api\SurveyApiController;
 
-Route::middleware('auth:sanctum')->post('/surveys/{token}', [SurveyApiController::class, 'receive']);
+// Webhook encuestas — autenticado con Sanctum + rate limiting
+Route::middleware(['auth:sanctum', 'throttle:60,1'])
+    ->post('/surveys/{token}', [SurveyApiController::class, 'receive']);

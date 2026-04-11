@@ -3,35 +3,25 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\MspCredential;
 use App\Services\MspService;
 use App\Exports\ApiMspExport;
 use Maatwebsite\Excel\Facades\Excel;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Symfony\Component\HttpFoundation\StreamedResponse;
-use Laravel\Ai\Ai;
 
 class ApiMspController extends Controller
 {
-    // -------------------------------------------------------------------------
-    // Vista principal
-    // -------------------------------------------------------------------------
-
     public function index(Request $request)
     {
-        $credential  = MspCredential::latest()->first();
         $fechaInicio = $request->get('fecha_inicio', now()->startOfMonth()->format('Y-m-d'));
         $fechaFin    = $request->get('fecha_fin', now()->format('Y-m-d'));
 
-        return view('admin.api-msp.index', compact(
-            'credential', 'fechaInicio', 'fechaFin'
-        ));
-    }
+        // Verificar que las credenciales están configuradas en .env
+        $credencialesOk = !empty(config('services.msp.username')) && !empty(config('services.msp.password'));
 
-    // -------------------------------------------------------------------------
-    // SSE: stream de progreso
-    // -------------------------------------------------------------------------
+        return view('admin.api-msp.index', compact('fechaInicio', 'fechaFin', 'credencialesOk'));
+    }
 
     public function stream(Request $request): StreamedResponse
     {
@@ -46,9 +36,7 @@ class ApiMspController extends Controller
             set_time_limit(300);
             ini_set('max_execution_time', 300);
 
-            while (ob_get_level() > 0) {
-                ob_end_clean();
-            }
+            while (ob_get_level() > 0) ob_end_clean();
 
             $this->sendEvent('status', [
                 'step'    => 0,
@@ -57,12 +45,6 @@ class ApiMspController extends Controller
             ]);
 
             try {
-                $cred = MspCredential::latest()->first();
-                if (!$cred) {
-                    $this->sendEvent('error', ['message' => 'No hay credenciales configuradas.']);
-                    return;
-                }
-
                 $service = new MspService();
 
                 $this->sendEvent('status', [
@@ -118,7 +100,6 @@ class ApiMspController extends Controller
                 ]);
 
                 $result = $service->combinePublic($tickets, $extraData);
-
                 Cache::put($cacheKey, $result, now()->addMinutes(30));
 
                 $this->sendEvent('done', [
@@ -140,10 +121,6 @@ class ApiMspController extends Controller
         ]);
     }
 
-    // -------------------------------------------------------------------------
-    // Resultados desde cache
-    // -------------------------------------------------------------------------
-
     public function results(Request $request)
     {
         $cacheKey = $request->get('cache_key');
@@ -163,11 +140,6 @@ class ApiMspController extends Controller
             'total'   => count($tickets),
         ]);
     }
-
-    // -------------------------------------------------------------------------
-    // Chat con Laravel AI
-    // POST /admin/api-msp/chat
-    // -------------------------------------------------------------------------
 
     public function chat(Request $request)
     {
@@ -200,103 +172,6 @@ class ApiMspController extends Controller
         }
     }
 
-    // -------------------------------------------------------------------------
-    // Construir contexto compacto para el AI
-    // -------------------------------------------------------------------------
-
-    private function buildAiContext(array $tickets): string
-    {
-        $total = count($tickets);
-
-        // Estadísticas por cliente
-        $porCliente = [];
-        $porTecnico = [];
-        $porTipo    = [];
-        $porWorkType = [];
-
-        foreach ($tickets as $t) {
-            $cliente  = $t['CustomerName']        ?? 'Sin cliente';
-            $tecnico  = trim(($t['UserFirstName'] ?? '') . ' ' . ($t['UserLastName'] ?? '')) ?: ($t['WorkType'] ?? 'Sin técnico');
-            $tipo     = $t['TicketIssueTypeName']  ?? 'Sin tipo';
-            $workType = $t['WorkType']             ?? 'Sin WorkType';
-
-            $porCliente[$cliente]   = ($porCliente[$cliente]  ?? 0) + 1;
-            $porTecnico[$tecnico]   = ($porTecnico[$tecnico]  ?? 0) + 1;
-            $porTipo[$tipo]         = ($porTipo[$tipo]        ?? 0) + 1;
-            $porWorkType[$workType] = ($porWorkType[$workType] ?? 0) + 1;
-        }
-
-        arsort($porCliente);
-        arsort($porTecnico);
-        arsort($porTipo);
-        arsort($porWorkType);
-
-        // Top 10 de cada categoría
-        $topClientes  = array_slice($porCliente,  0, 10, true);
-        $topTecnicos  = array_slice($porTecnico,  0, 10, true);
-        $topTipos     = array_slice($porTipo,     0, 10, true);
-        $topWorkTypes = array_slice($porWorkType, 0, 10, true);
-
-        // Lista de tickets resumida (número, título, cliente, worktype, fechas)
-        $listaTickets = array_map(fn($t) => sprintf(
-            '[%s] %s | Cliente: %s | WorkType: %s | Completado: %s',
-            $t['TicketNumber']  ?? 'N/A',
-            $t['TicketTitle']   ?? 'Sin título',
-            $t['CustomerName']  ?? 'N/A',
-            $t['WorkType']      ?? 'N/A',
-            $t['CompletedDate'] ?? 'N/A'
-        ), $tickets);
-
-        $context  = "TOTAL DE TICKETS: {$total}\n\n";
-
-        $context .= "TOP CLIENTES CON MÁS TICKETS:\n";
-        foreach ($topClientes as $nombre => $count) {
-            $context .= "  - {$nombre}: {$count} tickets\n";
-        }
-
-        $context .= "\nTOP WORK TYPES:\n";
-        foreach ($topWorkTypes as $wt => $count) {
-            $context .= "  - {$wt}: {$count} tickets\n";
-        }
-
-        $context .= "\nTOP TIPOS DE ISSUE:\n";
-        foreach ($topTipos as $tipo => $count) {
-            $context .= "  - {$tipo}: {$count} tickets\n";
-        }
-
-        $context .= "\nLISTA COMPLETA DE TICKETS:\n";
-        $context .= implode("\n", $listaTickets);
-
-        return $context;
-    }
-
-    // -------------------------------------------------------------------------
-    // Guardar credenciales
-    // -------------------------------------------------------------------------
-
-    public function saveCredential(Request $request)
-    {
-        $request->validate([
-            'username' => 'required|string',
-            'password' => 'required|string',
-            'base_url' => 'nullable|url',
-        ]);
-
-        MspCredential::truncate();
-
-        MspCredential::create([
-            'username' => $request->username,
-            'password' => $request->password,
-            'base_url' => $request->base_url ?? 'https://api.mspmanager.com/odata',
-        ]);
-
-        return back()->with('success', 'Credenciales guardadas correctamente.');
-    }
-
-    // -------------------------------------------------------------------------
-    // Export Excel
-    // -------------------------------------------------------------------------
-
     public function export(Request $request)
     {
         set_time_limit(300);
@@ -324,18 +199,64 @@ class ApiMspController extends Controller
         );
     }
 
-    // -------------------------------------------------------------------------
-    // Helper SSE
-    // -------------------------------------------------------------------------
+    private function buildAiContext(array $tickets): string
+    {
+        $total       = count($tickets);
+        $porCliente  = [];
+        $porTipo     = [];
+        $porWorkType = [];
+
+        foreach ($tickets as $t) {
+            $cliente  = $t['CustomerName']       ?? 'Sin cliente';
+            $tipo     = $t['TicketIssueTypeName'] ?? 'Sin tipo';
+            $workType = $t['WorkType']            ?? 'Sin WorkType';
+
+            $porCliente[$cliente]   = ($porCliente[$cliente]   ?? 0) + 1;
+            $porTipo[$tipo]         = ($porTipo[$tipo]         ?? 0) + 1;
+            $porWorkType[$workType] = ($porWorkType[$workType] ?? 0) + 1;
+        }
+
+        arsort($porCliente);
+        arsort($porTipo);
+        arsort($porWorkType);
+
+        $topClientes  = array_slice($porCliente,  0, 10, true);
+        $topTipos     = array_slice($porTipo,     0, 10, true);
+        $topWorkTypes = array_slice($porWorkType, 0, 10, true);
+
+        $listaTickets = array_map(fn($t) => sprintf(
+            '[%s] %s | Cliente: %s | WorkType: %s | Completado: %s',
+            $t['TicketNumber']  ?? 'N/A',
+            $t['TicketTitle']   ?? 'Sin título',
+            $t['CustomerName']  ?? 'N/A',
+            $t['WorkType']      ?? 'N/A',
+            $t['CompletedDate'] ?? 'N/A'
+        ), $tickets);
+
+        $context  = "TOTAL DE TICKETS: {$total}\n\n";
+        $context .= "TOP CLIENTES:\n";
+        foreach ($topClientes as $nombre => $count) {
+            $context .= "  - {$nombre}: {$count} tickets\n";
+        }
+        $context .= "\nTOP WORK TYPES:\n";
+        foreach ($topWorkTypes as $wt => $count) {
+            $context .= "  - {$wt}: {$count} tickets\n";
+        }
+        $context .= "\nTOP TIPOS DE ISSUE:\n";
+        foreach ($topTipos as $tipo => $count) {
+            $context .= "  - {$tipo}: {$count} tickets\n";
+        }
+        $context .= "\nLISTA COMPLETA DE TICKETS:\n";
+        $context .= implode("\n", $listaTickets);
+
+        return $context;
+    }
 
     private function sendEvent(string $event, array $data): void
     {
         echo "event: {$event}\n";
         echo 'data: ' . json_encode($data, JSON_UNESCAPED_UNICODE) . "\n\n";
-
-        if (ob_get_level() > 0) {
-            ob_flush();
-        }
+        if (ob_get_level() > 0) ob_flush();
         flush();
     }
 }

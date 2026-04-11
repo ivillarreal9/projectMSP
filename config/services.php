@@ -49,14 +49,19 @@ return [
     ],
 
     'sharepoint' => [
-    'tenant_id'     => env('AZURE_TENANT_ID'),
-    'client_id'     => env('AZURE_CLIENT_ID'),
-    'client_secret' => env('AZURE_CLIENT_SECRET'),
-    'site_url'      => env('SHAREPOINT_SITE_URL'),
-    'folder'        => env('SHAREPOINT_FOLDER'),
-    'file'          => env('SHAREPOINT_FILE'),
-    'folder_id'     => env('SHAREPOINT_FOLDER_ID'),  // ← agregar
+        'tenant_id'     => env('AZURE_TENANT_ID'),
+        'client_id'     => env('AZURE_CLIENT_ID'),
+        'client_secret' => env('AZURE_CLIENT_SECRET'),
+        'site_url'      => env('SHAREPOINT_SITE_URL'),
+        'folder'        => env('SHAREPOINT_FOLDER'),
+        'file'          => env('SHAREPOINT_FILE'),
+        'folder_id'     => env('SHAREPOINT_FOLDER_ID'),  // ← agregar
+    ],
 
-],
+    'msp' => [
+        'username' => env('MSP_USERNAME'),
+        'password' => env('MSP_PASSWORD'),
+        'base_url'  => env('MSP_BASE_URL', 'https://api.mspmanager.com/odata'),
+    ],
 
 ];

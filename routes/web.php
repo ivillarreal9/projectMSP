@@ -109,7 +109,6 @@ Route::middleware(['auth', 'role:admin,editor'])
 
         // API MSP
         Route::get('api-msp', [ApiMspController::class, 'index'])->name('api-msp.index');
-        Route::post('api-msp/credentials', [ApiMspController::class, 'saveCredential'])->name('api-msp.credentials');
         Route::get('api-msp/export', [ApiMspController::class, 'export'])->name('api-msp.export');
         Route::get('api-msp/results', [ApiMspController::class, 'results'])->name('api-msp.results');
         Route::post('api-msp/chat', [ApiMspController::class, 'chat'])->name('api-msp.chat');

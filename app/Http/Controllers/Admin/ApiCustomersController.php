@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\MspCredential;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Maatwebsite\Excel\Facades\Excel;
@@ -16,28 +15,34 @@ use PhpOffice\PhpSpreadsheet\Style\Fill;
 
 class ApiCustomersController extends Controller
 {
+    private function getAuthHeader(): string
+    {
+        $username = config('services.msp.username');
+        $password = config('services.msp.password');
+        return 'Basic ' . base64_encode($username . ':' . $password);
+    }
+
+    private function getBaseUrl(): string
+    {
+        return rtrim(config('services.msp.base_url'), '/');
+    }
+
     public function index()
     {
-        $credential = MspCredential::latest()->first();
-
-        return view('admin.api-customers.index', compact('credential'));
+        $credencialesOk = !empty(config('services.msp.username')) && !empty(config('services.msp.password'));
+        return view('admin.api-customers.index', compact('credencialesOk'));
     }
 
     public function fetch(Request $request)
     {
-        $credential = MspCredential::latest()->first();
-
-        if (!$credential) {
-            return response()->json(['error' => 'Sin credenciales configuradas.'], 400);
+        if (!config('services.msp.username')) {
+            return response()->json(['error' => 'Sin credenciales configuradas en .env'], 400);
         }
 
-        $authHeader = 'Basic ' . base64_encode($credential->username . ':' . $credential->password);
-        $baseUrl    = rtrim($credential->base_url, '/');
-
-        $url = $baseUrl . '/customers?$OrderBy=StartDate desc&$select=CustomerName,CustomerId';
+        $url = $this->getBaseUrl() . '/customers?$OrderBy=StartDate desc&$select=CustomerName,CustomerId';
 
         $response = Http::withHeaders([
-            'Authorization' => $authHeader,
+            'Authorization' => $this->getAuthHeader(),
         ])->timeout(60)->get($url);
 
         if ($response->failed()) {
@@ -56,19 +61,14 @@ class ApiCustomersController extends Controller
 
     public function export(Request $request)
     {
-        $credential = MspCredential::latest()->first();
-
-        if (!$credential) {
-            return back()->with('error', 'Sin credenciales configuradas.');
+        if (!config('services.msp.username')) {
+            return back()->with('error', 'Sin credenciales configuradas en .env');
         }
 
-        $authHeader = 'Basic ' . base64_encode($credential->username . ':' . $credential->password);
-        $baseUrl    = rtrim($credential->base_url, '/');
-
-        $url = $baseUrl . '/customers?$OrderBy=StartDate desc&$select=CustomerName,CustomerId';
+        $url = $this->getBaseUrl() . '/customers?$OrderBy=StartDate desc&$select=CustomerName,CustomerId';
 
         $response = Http::withHeaders([
-            'Authorization' => $authHeader,
+            'Authorization' => $this->getAuthHeader(),
         ])->timeout(60)->get($url);
 
         if ($response->failed()) {
@@ -77,7 +77,6 @@ class ApiCustomersController extends Controller
 
         $data = $response->json('value') ?? [];
 
-        // Export inline sin clase separada
         $export = new class($data) implements FromArray, WithHeadings, ShouldAutoSize, WithStyles {
             public function __construct(private array $data) {}
 

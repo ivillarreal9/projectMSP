@@ -32,14 +32,16 @@ class MspService
 
     public function __construct()
     {
-        $cred = MspCredential::latest()->first();
+        $username = config('services.msp.username');
+        $password = config('services.msp.password');
+        $baseUrl  = config('services.msp.base_url');
 
-        if (!$cred) {
-            throw new \Exception('No hay credenciales MSP configuradas.');
+        if (!$username || !$password) {
+            throw new \Exception('No hay credenciales MSP configuradas en el .env');
         }
 
-        $this->baseUrl    = rtrim($cred->base_url, '/');
-        $this->authHeader = 'Basic ' . base64_encode($cred->username . ':' . $cred->password);
+        $this->baseUrl    = rtrim($baseUrl, '/');
+        $this->authHeader = 'Basic ' . base64_encode($username . ':' . $password);
     }
 
     // -------------------------------------------------------------------------
