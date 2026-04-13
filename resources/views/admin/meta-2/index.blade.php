@@ -255,7 +255,6 @@
             document.getElementById('modal-ticket-type').textContent   = item.issue_type;
             document.getElementById('modal-created').textContent       = item.created_date || '—';
             document.getElementById('modal-completed').textContent     = item.completed_date || '—';
-            document.getElementById('modal-msp-link').href             = 'https://app.mspmanager.com/tickets/' + item.ticket_id;
 
             const container = document.getElementById('modal-custom-fields');
             container.innerHTML = '';
