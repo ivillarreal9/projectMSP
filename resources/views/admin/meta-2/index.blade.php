@@ -39,15 +39,6 @@
                         {{ isset($meta2) ? $meta2->total() : 0 }} registros
                     </span>
 
-                    <a id="btn-export-pdf"
-                       href="{{ (request('month') && request('year')) ? route('admin.meta-2.export-pdf', ['month' => request('month'), 'year' => request('year')]) : '#' }}"
-                       class="inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition shadow-sm {{ (isset($meta2) && $meta2->total() > 0 && request('month') && request('year')) ? '' : 'hidden' }}">
-                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
-                        </svg>
-                        Exportar PDF
-                    </a>
-
                     <a id="btn-export-excel"
                     href="#"
                     class="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition shadow-sm hidden">
@@ -56,18 +47,6 @@
                         </svg>
                         Exportar Excel
                     </a>
-
-                    <a id="btn-pdf-preview"
-                       href="{{ route('admin.meta-2.pdf-preview') }}"
-                       target="_blank"
-                       class="inline-flex items-center gap-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-sm font-medium px-4 py-2 rounded-lg transition {{ (isset($meta2) && $meta2->total() > 0) ? '' : 'hidden' }}">
-                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
-                        </svg>
-                        Vista previa
-                    </a>
-
                 </div>
             </div>
 
@@ -212,20 +191,6 @@
                     Campos personalizados
                 </p>
                 <div id="modal-custom-fields" class="space-y-0 divide-y divide-gray-100 dark:divide-gray-700"></div>
-            </div>
-
-            <div class="px-6 py-4 border-t border-gray-100 dark:border-gray-700 flex justify-between items-center shrink-0">
-                <a id="modal-msp-link" href="#" target="_blank"
-                   class="inline-flex items-center gap-1.5 text-xs text-indigo-500 hover:text-indigo-700 dark:hover:text-indigo-300 transition">
-                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-                    </svg>
-                    Abrir en MSP Manager
-                </a>
-                <button onclick="closeTicketModal()"
-                        class="px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-sm font-medium rounded-lg transition">
-                    Cerrar
-                </button>
             </div>
         </div>
     </div>
@@ -415,38 +380,14 @@
         }
 
         function updateHeaderActions(month, year, total) {
-            // Contador
             const counter = document.getElementById('total-registros');
             counter.textContent = total + ' registros';
             counter.classList.remove('hidden');
 
-            // Botón Exportar PDF con URL actualizada
-            const btnExport = document.getElementById('btn-export-pdf');
-            btnExport.href = `{{ route('admin.meta-2.export-pdf') }}?month=${month}&year=${year}`;
-            btnExport.classList.remove('hidden');
-
-            // Botón Vista previa
-            document.getElementById('btn-pdf-preview').classList.remove('hidden');
-        }
-
-
-        function updateHeaderActions(month, year, total) {
-            const counter = document.getElementById('total-registros');
-            counter.textContent = total + ' registros';
-            counter.classList.remove('hidden');
-
-            const btnExport = document.getElementById('btn-export-pdf');
-            btnExport.href = `{{ route('admin.meta-2.export-pdf') }}?month=${month}&year=${year}`;
-            btnExport.classList.remove('hidden');
-
-            // ✅ Excel
             const btnExcel = document.getElementById('btn-export-excel');
             btnExcel.href = `{{ route('admin.meta-2.export-excel') }}?month=${month}&year=${year}`;
             btnExcel.classList.remove('hidden');
-
-            document.getElementById('btn-pdf-preview').classList.remove('hidden');
         }
-
 
         function startSSE(month, year, search) {
             resetSSEModal();

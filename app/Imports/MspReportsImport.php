@@ -31,11 +31,9 @@ class MspReportsImport implements ToModel, WithHeadingRow, WithChunkReading, Ski
             return null;
         }
 
-        // Resolver fechas — pueden venir como datetime object, número serial Excel, o string
         $fechaCreacion = $this->resolveDate($row['fecha_de_creacion'] ?? null);
         $fechaCierre   = $this->resolveDate($row['fecha_de_cierre'] ?? null);
 
-        // Tiempo de vida — puede ser fórmula string o número
         $tiempoVida = null;
         $rawTiempo = $row['tiempo_de_vida_del_ticket'] ?? null;
         if (is_numeric($rawTiempo)) {
@@ -44,42 +42,61 @@ class MspReportsImport implements ToModel, WithHeadingRow, WithChunkReading, Ski
             $tiempoVida = round($fechaCreacion->diffInSeconds($fechaCierre) / 86400, 4);
         }
 
-        // Semana — puede ser fórmula string o valor calculado
         $semana = $row['semana'] ?? null;
         if ($semana && str_starts_with((string)$semana, '=')) {
             $semana = $fechaCierre ? 'S' . $fechaCierre->weekOfYear : null;
         }
 
-        // Mes cierre
         $mesCierre = $row['mes_cierre'] ?? null;
         if ($mesCierre && str_starts_with((string)$mesCierre, '=')) {
             $mesCierre = $fechaCierre ? ucfirst($fechaCierre->translatedFormat('F')) : null;
         }
 
-        return new MspReport([
-            'ticket_number'       => $row['ticket_number'] ?? null,
-            'customer_name'       => isset($row['customername']) ? trim($row['customername']) : null,
-            'location_name'       => isset($row['locationname']) ? trim($row['locationname']) : null,
-            'ticket_title'        => $row['tickettitle'] ?? null,
-            'ticket_type'         => $row['tickettype'] ?? null,
-            'fecha_creacion'      => $fechaCreacion,
-            'fecha_cierre'        => $fechaCierre,
-            'tiempo_vida_ticket'  => $tiempoVida,
-            'semana'              => $semana,
-            'mes_cierre'          => $mesCierre,
-            'tipo_ticket'         => isset($row['tipo_de_ticket']) ? trim($row['tipo_de_ticket']) : null,
-            'clasificacion_eventos' => isset($row['clasificacion_de_eventos']) ? trim($row['clasificacion_de_eventos']) : null,
-            'causa_dano'          => isset($row['causa_de_dano']) ? trim($row['causa_de_dano']) : null,
-            'solucion'            => isset($row['solucion']) ? trim($row['solucion']) : null,
-            'detalle'             => $row['detalle'] ?? null,
-            'tipo_cliente'        => isset($row['tipo_de_cliente']) ? trim($row['tipo_de_cliente']) : null,
-            'ubicacion_hopsa'     => $row['ubicacion_hopsa'] ?? null,
-            'solucion_definitiva' => $row['solucion_definitiva_recomendacion'] ?? null,
-            'tipo_reporte'        => $row['tipo_de_reporte'] ?? null,
-            'email_cliente'       => $row['email_cliente'] ?? null,
-            'logo_path'           => $row['logo_path'] ?? null,
-            'periodo'             => $this->periodo,
-        ]);
+        $customerName = isset($row['customername']) ? trim($row['customername']) : null;
+
+        // Período derivado de fecha de cierre — no del input manual
+        $periodo = $fechaCierre
+            ? ucfirst($fechaCierre->translatedFormat('F Y'))
+            : $this->periodo;
+
+        // Crear cliente en msp_clients si no existe
+        if ($customerName) {
+            \App\Models\MspClient::firstOrCreate(
+                ['customer_name' => $customerName]
+            );
+        }
+
+        // Upsert por ticket_number único — evita duplicados
+        MspReport::updateOrCreate(
+            ['ticket_number' => $row['ticket_number'] ?? null],
+            [
+                'customer_name'         => $customerName,
+                'location_name'         => isset($row['locationname']) ? trim($row['locationname']) : null,
+                'ticket_title'          => $row['tickettitle'] ?? null,
+                'ticket_type'           => $row['tickettype'] ?? null,
+                'fecha_creacion'        => $fechaCreacion,
+                'fecha_cierre'          => $fechaCierre,
+                'tiempo_vida_ticket'    => $tiempoVida,
+                'semana'                => $semana,
+                'mes_cierre'            => $mesCierre,
+                'tipo_ticket'           => isset($row['tipo_de_ticket']) ? trim($row['tipo_de_ticket']) : null,
+                'clasificacion_eventos' => isset($row['clasificacion_de_eventos']) ? trim($row['clasificacion_de_eventos']) : null,
+                'causa_dano'            => isset($row['causa_de_dano']) ? trim($row['causa_de_dano']) : null,
+                'solucion'              => isset($row['solucion']) ? trim($row['solucion']) : null,
+                'detalle'               => $row['detalle'] ?? null,
+                'tipo_cliente'          => isset($row['tipo_de_cliente']) ? trim($row['tipo_de_cliente']) : null,
+                'ubicacion_hopsa'       => $row['ubicacion_hopsa'] ?? null,
+                'solucion_definitiva'   => $row['solucion_definitiva_recomendacion'] ?? null,
+                'tipo_reporte'          => $row['tipo_de_reporte'] ?? null,
+                'email_cliente'         => $row['email_cliente'] ?? null,
+                'logo_path'             => $row['logo_path'] ?? null,
+                'batch_id'              => $this->batchId, // ← agregar
+                'periodo'               => $periodo,
+
+            ]
+        );
+
+        return null;
     }
 
     private function resolveDate(mixed $value): ?\Carbon\Carbon

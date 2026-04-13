@@ -24,7 +24,7 @@
     {{-- Botón abrir modal --}}
     <td class="px-6 py-4 text-right">
         <button
-            data-ticket='@json($item)'
+            data-ticket="{{ htmlspecialchars(json_encode($item, JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8') }}"
             class="ticket-btn inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition border border-indigo-200 dark:border-indigo-700">
             <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>

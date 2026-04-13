@@ -64,4 +64,8 @@ return [
         'base_url'  => env('MSP_BASE_URL', 'https://api.mspmanager.com/odata'),
     ],
 
+    'sendgrid' => [
+        'api_key' => env('SENDGRID_API_KEY'),
+        'from'    => env('SENDGRID_FROM', 'ivillarreal@ovni.com'),
+    ],
 ];

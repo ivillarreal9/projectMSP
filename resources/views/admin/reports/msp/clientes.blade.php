@@ -29,6 +29,14 @@
             <button type="submit" class="px-5 py-2 text-white rounded-lg text-sm font-medium" style="background:var(--ovni-orange)">
                 <i class="fa-solid fa-filter mr-1"></i> Filtrar
             </button>
+            {{-- ← AGREGAR ESTO --}}
+            @if($periodo)
+            <a href="{{ route('admin.msp.pdf.masiva', ['periodo' => $periodo]) }}"
+               class="px-5 py-2 text-white rounded-lg text-sm font-medium flex items-center gap-2 hover:opacity-90 transition"
+               style="background:#1a1a2e">
+                <i class="fa-solid fa-file-zipper"></i> Descarga Masiva PDF
+            </a>
+            @endif
             <div class="text-xs text-gray-400 self-center">
                 {{ $clientes->total() }} clientes
             </div>

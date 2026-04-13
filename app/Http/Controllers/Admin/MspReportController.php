@@ -70,8 +70,9 @@ class MspReportController extends Controller
 
     public function clientes(Request $request)
     {
+        // DESPUÉS
         $periodos = MspReport::uniquePeriodos();
-        $periodo  = $request->input('periodo', $periodos[0] ?? null);
+        $periodo  = $request->input('periodo', $periodos[count($periodos) - 1] ?? null);
         $search   = $request->input('search', '');
 
         // Obtener nombres únicos del período con stats
@@ -138,8 +139,9 @@ class MspReportController extends Controller
         $periodo  = $request->input('periodo');
         $stats    = MspReport::statsForCustomer($customer, $periodo);
         $logoUrl  = $this->resolveLogoUrl($customer, $periodo);
+        $ovnicomLogo = $this->getOvnicomLogo();
 
-        return view('admin.reports.msp.pdf_template', compact('customer', 'stats', 'periodo', 'logoUrl'));
+        return view('admin.reports.msp.pdf_template', compact('customer', 'stats', 'periodo', 'logoUrl', 'ovnicomLogo'));
     }
 
     public function pdfDownload(Request $request, string $customer)
@@ -148,8 +150,9 @@ class MspReportController extends Controller
         $periodo  = $request->input('periodo');
         $stats    = MspReport::statsForCustomer($customer, $periodo);
         $logoUrl  = $this->resolveLogoUrl($customer, $periodo);
+        $ovnicomLogo = $this->getOvnicomLogo();
 
-        $html     = view('admin.reports.msp.pdf_template', compact('customer', 'stats', 'periodo', 'logoUrl'))->render();
+        $html     = view('admin.reports.msp.pdf_template', compact('customer', 'stats', 'periodo', 'logoUrl', 'ovnicomLogo'))->render();
         $filename = 'MSP-' . str_replace([' ', '/'], '-', $customer) . '-' . ($periodo ?? 'reporte') . '.pdf';
         $path     = storage_path("app/public/msp_pdfs/{$filename}");
 
@@ -205,7 +208,9 @@ class MspReportController extends Controller
         // Generar PDF
         $stats   = MspReport::statsForCustomer($customer, $periodo);
         $logoUrl = $this->resolveLogoUrl($customer, $periodo);
-        $html    = view('admin.reports.msp.pdf_template', compact('customer', 'stats', 'periodo', 'logoUrl'))->render();
+        $ovnicomLogo = $this->getOvnicomLogo(); // ← AGREGAR
+
+        $html    = view('admin.reports.msp.pdf_template', compact('customer', 'stats', 'periodo', 'logoUrl', 'ovnicomLogo'))->render();
 
         $filename = 'MSP-' . str_replace([' ', '/'], '-', $customer) . '-' . $periodo . '.pdf';
         $pdfPath  = storage_path("app/public/msp_pdfs/{$filename}");
@@ -217,8 +222,8 @@ class MspReportController extends Controller
         Browsershot::html($html)->format('A4')->showBackground()->waitUntilNetworkIdle()->save($pdfPath);
 
         // Enviar vía SendGrid
-        $sendgridKey = \App\Models\MspSetting::get('sendgrid_api_key');
-        $fromEmail   = \App\Models\MspSetting::get('sendgrid_from_email', 'ivillarreal@ovni.com');
+        $sendgridKey = config('services.sendgrid.api_key');
+        $fromEmail   = config('services.sendgrid.from', 'ivillarreal@ovni.com');
         $fromName    = 'Ovnicom MSP Reports';
 
         $pdfContent  = base64_encode(file_get_contents($pdfPath));
@@ -374,6 +379,15 @@ Para cualquier otra consulta responde en español de forma clara y concisa.";
         return $cliente?->getLogoBase64();
     }
 
+    private function getOvnicomLogo(): ?string
+    {
+        $path = storage_path('app/public/logos/ovnicom.jpg');
+        if (!file_exists($path)) return null;
+        $mime   = mime_content_type($path);
+        $base64 = base64_encode(file_get_contents($path));
+        return "data:{$mime};base64,{$base64}";
+    }
+
     public function sharepointIndex(Request $request)
     {
         $sp      = app(\App\Services\SharePointService::class);
@@ -433,8 +447,8 @@ Para cualquier otra consulta responde en español de forma clara y concisa.";
 
             @unlink($tempPath);
 
-            $total  = \App\Models\MspReport::where('periodo', $periodo)->count();
-            $unicos = \App\Models\MspReport::where('periodo', $periodo)->distinct('customer_name')->count();
+            $total  = \App\Models\MspReport::where('batch_id', $batch->id)->count();
+            $unicos = \App\Models\MspReport::where('batch_id', $batch->id)->distinct('customer_name')->count();
             $batch->update(['total_registros' => $total, 'clientes_unicos' => $unicos]);
 
             return back()->with('success', "✅ Importados {$total} registros de {$unicos} clientes para {$periodo}.");
@@ -498,4 +512,81 @@ Para cualquier otra consulta responde en español de forma clara y concisa.";
         return back()->with('success', '✅ Información del cliente actualizada correctamente.');
     }
     
+    public function descargaMasivaIndex(Request $request)
+    {
+        $periodos = MspReport::uniquePeriodos();
+        $periodo  = $request->input('periodo', $periodos[0] ?? null);
+
+        $clientes = collect();
+        if ($periodo) {
+            $customerNames = MspReport::where('periodo', $periodo)
+                ->distinct()
+                ->pluck('customer_name');
+
+            $clientes = MspClient::whereIn('customer_name', $customerNames)
+                ->orderBy('customer_name')
+                ->get();
+        }
+
+        return view('admin.reports.msp.descarga_masiva', compact('periodos', 'periodo', 'clientes'));
+    }
+
+    public function descargaMasivaZip(Request $request)
+    {
+        $request->validate([
+            'periodo'   => 'required|string',
+            'clientes'  => 'required|array|min:1|max:30',
+            'clientes.*'=> 'required|string',
+        ]);
+
+        $periodo  = $request->input('periodo');
+        $nombres  = $request->input('clientes');
+
+        $zipName = 'MSP-Reportes-' . str_replace(' ', '-', $periodo) . '.zip';
+        $zipPath = storage_path("app/public/msp_pdfs/zips/{$zipName}");
+
+        if (!is_dir(dirname($zipPath))) {
+            mkdir(dirname($zipPath), 0755, true);
+        }
+
+        $zip = new \ZipArchive();
+        $zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE);
+
+        foreach ($nombres as $customerName) {
+            try {
+                $stats       = MspReport::statsForCustomer($customerName, $periodo);
+                $logoUrl     = $this->resolveLogoUrl($customerName, $periodo);
+                $ovnicomLogo = $this->getOvnicomLogo();
+
+                $html = view('admin.reports.msp.pdf_template',
+                    compact('stats', 'periodo', 'logoUrl', 'ovnicomLogo')
+                    + ['customer' => $customerName]
+                )->render();
+
+                $filename = 'MSP-' . str_replace([' ', '/', ','], '-', $customerName) . '-' . str_replace(' ', '-', $periodo) . '.pdf';
+                $pdfPath  = storage_path("app/public/msp_pdfs/{$filename}");
+
+                if (!is_dir(dirname($pdfPath))) {
+                    mkdir(dirname($pdfPath), 0755, true);
+                }
+
+                Browsershot::html($html)
+                    ->format('A4')
+                    ->showBackground()
+                    ->waitUntilNetworkIdle()
+                    ->save($pdfPath);
+
+                $zip->addFile($pdfPath, $filename);
+
+            } catch (\Throwable $e) {
+                // Continuar con el siguiente cliente si uno falla
+                continue;
+            }
+        }
+
+        $zip->close();
+
+        return response()->download($zipPath, $zipName)->deleteFileAfterSend(true);
+    }
+
 }

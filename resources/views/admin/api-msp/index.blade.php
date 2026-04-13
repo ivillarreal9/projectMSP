@@ -32,17 +32,17 @@
                     <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100">API MSP</h1>
                     <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
                         Consulta tickets desde MSP Manager por rango de fecha.
-                        @if($credential)
-                            <span class="inline-flex items-center gap-1 ml-2 text-green-600 dark:text-green-400">
-                                <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>
-                                Conectado como {{ $credential->username }}
-                            </span>
-                        @else
-                            <span class="inline-flex items-center gap-1 ml-2 text-red-500">
-                                <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>
-                                Sin credenciales configuradas
-                            </span>
-                        @endif
+                    @if($credencialesOk)
+                        <span class="inline-flex items-center gap-1 ml-2 text-green-600 dark:text-green-400">
+                            <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+                            Credenciales configuradas
+                        </span>
+                    @else
+                        <span class="inline-flex items-center gap-1 ml-2 text-red-500">
+                            <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                            Sin credenciales configuradas
+                        </span>
+                    @endif
                     </p>
                 </div>
 
@@ -96,7 +96,7 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
                     </svg>
                     <p class="text-sm text-gray-400 dark:text-gray-500">
-                        @if(!$credential)
+                        @if(!$credencialesOk)
                             Configura las credenciales para comenzar
                         @else
                             Selecciona un rango de fechas y presiona Filtrar
@@ -130,9 +130,7 @@
         </div>
     </div>
 
-    {{-- ===================================================================
-         Botón flotante AI Chat — aparece solo cuando hay datos
-    ==================================================================== --}}
+    {{-- Botón flotante AI Chat --}}
     <button id="btn-ai-chat" onclick="openAiChat()"
             style="display:none;"
             class="fixed bottom-6 right-6 z-40 w-14 h-14 bg-purple-600 hover:bg-purple-700 text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 items-center justify-center group">
@@ -144,15 +142,12 @@
         </span>
     </button>
 
-    {{-- ===================================================================
-         Modal: AI Chat
-    ==================================================================== --}}
+    {{-- Modal: AI Chat --}}
     <div id="ai-chat-modal"
          class="fixed inset-0 z-50 hidden items-end justify-end p-6 pointer-events-none">
         <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md flex flex-col pointer-events-auto"
              style="height: 520px;">
 
-            {{-- Header --}}
             <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-700 shrink-0 bg-purple-600 rounded-t-2xl">
                 <div class="flex items-center gap-2">
                     <div class="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
@@ -180,9 +175,7 @@
                 </div>
             </div>
 
-            {{-- Mensajes --}}
             <div id="chat-messages" class="flex-1 overflow-y-auto px-4 py-3 space-y-3">
-                {{-- Mensaje de bienvenida --}}
                 <div class="flex gap-2">
                     <div class="w-7 h-7 bg-purple-100 dark:bg-purple-900/40 rounded-full flex items-center justify-center shrink-0 mt-0.5">
                         <svg class="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -196,7 +189,6 @@
                     </div>
                 </div>
 
-                {{-- Sugerencias rápidas --}}
                 <div id="chat-suggestions" class="flex flex-wrap gap-1.5 pl-9">
                     <button onclick="sendSuggestion('¿Cuántos tickets hay por cliente?')"
                             class="text-[10px] px-2.5 py-1 bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 rounded-full border border-purple-200 dark:border-purple-700 hover:bg-purple-100 transition">
@@ -217,7 +209,6 @@
                 </div>
             </div>
 
-            {{-- Input --}}
             <div class="px-3 py-3 border-t border-gray-100 dark:border-gray-700 shrink-0">
                 <div class="flex items-end gap-2">
                     <textarea id="chat-input"
@@ -238,9 +229,7 @@
         </div>
     </div>
 
-    {{-- ===================================================================
-         Modal: Progreso SSE
-    ==================================================================== --}}
+    {{-- Modal: Progreso SSE --}}
     <div id="loading-modal"
          class="fixed inset-0 z-50 hidden items-center justify-center bg-black/60 backdrop-blur-sm">
         <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-8">
@@ -299,9 +288,7 @@
         </div>
     </div>
 
-    {{-- ===================================================================
-         Modal: Credenciales
-    ==================================================================== --}}
+    {{-- Modal: Credenciales --}}
     <div id="cred-modal"
          class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 backdrop-blur-sm">
         <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-md mx-4 p-6">
@@ -320,7 +307,7 @@
                 @csrf
                 <div>
                     <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Usuario (email)</label>
-                    <input type="text" name="username" value="{{ $credential->username ?? '' }}" placeholder="usuario@empresa.com"
+                    <input type="text" name="username" value="{{ config('services.msp.username') ?? '' }}" placeholder="usuario@empresa.com"
                            class="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-400">
                 </div>
                 <div>
@@ -330,7 +317,7 @@
                 </div>
                 <div>
                     <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Base URL de la API</label>
-                    <input type="text" name="base_url" value="{{ $credential->base_url ?? 'https://api.mspmanager.com/odata' }}"
+                    <input type="text" name="base_url" value="{{ config('services.msp.base_url') ?? 'https://api.mspmanager.com/odata' }}"
                            class="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-400">
                 </div>
                 <div class="flex justify-end gap-3 pt-2">
@@ -344,9 +331,6 @@
     </div>
 
     <script>
-    // =======================================================================
-    // Estado global
-    // =======================================================================
     let ticketsData     = [];
     let currentDates    = { inicio: '', fin: '' };
     let activeSource    = null;
@@ -369,24 +353,16 @@
     };
     const FIXED_KEYS = [...Object.keys(FIXED_COLS), 'TicketId', 'DueDate'];
 
-    // =======================================================================
-    // SSE
-    // =======================================================================
     function startQuery() {
         const inicio = document.getElementById('fecha_inicio').value;
         const fin    = document.getElementById('fecha_fin').value;
-
         if (!inicio || !fin) { alert('Selecciona ambas fechas.'); return; }
-
         currentDates  = { inicio, fin };
         queryFinished = false;
-
         if (activeSource) { activeSource.close(); activeSource = null; }
-
         resetTable();
         showLoadingModal();
         setProgress(5, 'Iniciando consulta...', 'Paso 1 de 3');
-
         const url = `{{ route('admin.api-msp.stream') }}?fecha_inicio=${inicio}&fecha_fin=${fin}`;
         activeSource = new EventSource(url);
 
@@ -412,42 +388,28 @@
             queryFinished = true;
             activeSource.close();
             activeSource = null;
-
             const d = JSON.parse(e.data);
             currentCacheKey = d.cache_key || '';
-
             setProgress(100, d.message || 'Consulta completada', 'Completado');
             markAllStepsDone();
-
             if (d.total === 0) {
-                setTimeout(() => {
-                    hideLoadingModal();
-                    document.getElementById('table-empty').classList.remove('hidden');
-                }, 500);
+                setTimeout(() => { hideLoadingModal(); document.getElementById('table-empty').classList.remove('hidden'); }, 500);
                 return;
             }
-
             fetch(`{{ route('admin.api-msp.results') }}?cache_key=${d.cache_key}`)
                 .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
                 .then(data => {
                     setTimeout(() => {
                         hideLoadingModal();
                         renderTable(data.tickets);
-
-                        // Mostrar botón AI aquí, FUERA de renderTable, siempre se ejecuta
                         if (data.tickets && data.tickets.length > 0) {
                             const btnAi = document.getElementById('btn-ai-chat');
-                            if (btnAi) {
-                                btnAi.classList.remove('hidden');
-                                btnAi.classList.add('flex');
-                            }
+                            if (btnAi) { btnAi.classList.remove('hidden'); btnAi.classList.add('flex'); }
                             const subtitle = document.getElementById('chat-subtitle');
-                            if (subtitle) {
-                                subtitle.textContent = `${data.tickets.length} tickets cargados`;
-                            }
+                            if (subtitle) subtitle.textContent = `${data.tickets.length} tickets cargados`;
                         }
                     }, 500);
-                })
+                });
         });
 
         activeSource.addEventListener('error', e => {
@@ -473,41 +435,31 @@
         };
     }
 
-    // =======================================================================
-    // Tabla
-    // =======================================================================
     function renderTable(tickets) {
         if (!tickets || tickets.length === 0) {
             document.getElementById('table-empty').classList.remove('hidden');
             document.getElementById('table-container').classList.add('hidden');
             return;
         }
-
         ticketsData = tickets;
-
         const allKeys     = [...new Set(tickets.flatMap(t => Object.keys(t)))];
         const dynamicCols = allKeys.filter(k => !FIXED_KEYS.includes(k));
-
         const headRow = document.querySelector('#table-head tr');
         headRow.innerHTML = '';
-
         Object.entries(FIXED_COLS).forEach(([key, label]) => {
             const th = document.createElement('th');
             th.className = 'px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap';
             th.textContent = label;
             headRow.appendChild(th);
         });
-
         dynamicCols.forEach(col => {
             const th = document.createElement('th');
             th.className = 'px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap';
             th.innerHTML = `${escHtml(col)} <span class="text-[9px] bg-orange-100 text-orange-500 px-1 rounded normal-case">CF</span>`;
             headRow.appendChild(th);
         });
-
         const tbody = document.getElementById('table-body');
         tbody.innerHTML = '';
-
         const cellMap = {
             TicketNumber:           v => `<td class="px-4 py-3 font-mono text-xs text-purple-600 dark:text-purple-400 whitespace-nowrap">${escHtml(v)||'—'}</td>`,
             TicketTitle:            v => `<td class="px-4 py-3 text-gray-800 dark:text-gray-200 max-w-xs truncate" title="${escHtml(v)||''}">${escHtml(v)||'—'}</td>`,
@@ -520,7 +472,6 @@
             CreatedDate:            v => `<td class="px-4 py-3 text-gray-500 dark:text-gray-400 whitespace-nowrap text-xs">${escHtml(v)||'—'}</td>`,
             CompletedDate:          v => `<td class="px-4 py-3 text-gray-500 dark:text-gray-400 whitespace-nowrap text-xs">${escHtml(v)||'—'}</td>`,
         };
-
         tickets.forEach(ticket => {
             const tr = document.createElement('tr');
             tr.className = 'hover:bg-gray-50/70 dark:hover:bg-gray-700/30 transition';
@@ -533,15 +484,12 @@
             tr.innerHTML = html;
             tbody.appendChild(tr);
         });
-
         document.getElementById('table-footer').textContent = `Total: ${tickets.length} registros — Período: ${currentDates.inicio} al ${currentDates.fin}`;
         document.getElementById('table-empty').classList.add('hidden');
         document.getElementById('table-container').classList.remove('hidden');
         document.getElementById('result-count').textContent = `${tickets.length} registros encontrados`;
         document.getElementById('result-count').classList.remove('hidden');
         document.getElementById('btn-export').classList.remove('hidden');
-
-        // Mostrar botón flotante AI
         document.getElementById('btn-ai-chat').style.display = 'flex';
         document.getElementById('chat-subtitle').textContent = `${tickets.length} tickets cargados`;
     }
@@ -551,26 +499,20 @@
         return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
 
-    // =======================================================================
-    // AI Chat
-    // =======================================================================
     function openAiChat() {
         const m = document.getElementById('ai-chat-modal');
-        m.classList.remove('hidden');
-        m.classList.add('flex');
+        m.classList.remove('hidden'); m.classList.add('flex');
         document.getElementById('chat-input').focus();
     }
 
     function closeAiChat() {
         const m = document.getElementById('ai-chat-modal');
-        m.classList.add('hidden');
-        m.classList.remove('flex');
+        m.classList.add('hidden'); m.classList.remove('flex');
     }
 
     function clearChat() {
         chatHistory = [];
         const container = document.getElementById('chat-messages');
-        // Dejar solo el primer mensaje de bienvenida + sugerencias
         const children = Array.from(container.children);
         children.slice(2).forEach(el => el.remove());
         document.getElementById('chat-suggestions').classList.remove('hidden');
@@ -583,10 +525,7 @@
     }
 
     function handleChatKey(e) {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            sendChatMessage();
-        }
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); }
     }
 
     function autoResize(el) {
@@ -596,40 +535,24 @@
 
     async function sendChatMessage() {
         if (isChatSending) return;
-
         const input   = document.getElementById('chat-input');
         const message = input.value.trim();
-        if (!message) return;
-        if (!currentCacheKey) return;
-
+        if (!message || !currentCacheKey) return;
         isChatSending = true;
         input.value   = '';
         input.style.height = 'auto';
         document.getElementById('chat-suggestions').classList.add('hidden');
-
-        // Agregar mensaje del usuario
         appendMessage('user', message);
-
-        // Indicador de escritura
         const typingId = appendTyping();
-
         try {
             const res = await fetch('{{ route('admin.api-msp.chat') }}', {
                 method:  'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': '{{ csrf_token() }}',
-                },
-                body: JSON.stringify({
-                    message:   message,
-                    cache_key: currentCacheKey,
-                }),
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
+                body: JSON.stringify({ message, cache_key: currentCacheKey }),
             });
-
             const data = await res.json();
             removeTyping(typingId);
             appendMessage('ai', data.reply || 'Sin respuesta.');
-
         } catch (err) {
             removeTyping(typingId);
             appendMessage('ai', 'Error al conectar con el asistente.');
@@ -640,44 +563,32 @@
 
     function appendMessage(role, text) {
         const container = document.getElementById('chat-messages');
-
+        const div = document.createElement('div');
         if (role === 'user') {
-            const div = document.createElement('div');
             div.className = 'flex justify-end';
-            div.innerHTML = `
-                <div class="bg-purple-600 text-white rounded-2xl rounded-tr-none px-3 py-2 max-w-[85%]">
-                    <p class="text-xs whitespace-pre-wrap">${escHtml(text)}</p>
-                </div>`;
-            container.appendChild(div);
+            div.innerHTML = `<div class="bg-purple-600 text-white rounded-2xl rounded-tr-none px-3 py-2 max-w-[85%]"><p class="text-xs whitespace-pre-wrap">${escHtml(text)}</p></div>`;
         } else {
-            const div = document.createElement('div');
             div.className = 'flex gap-2';
             div.innerHTML = `
                 <div class="w-7 h-7 bg-purple-100 dark:bg-purple-900/40 rounded-full flex items-center justify-center shrink-0 mt-0.5">
-                    <svg class="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
-                    </svg>
+                    <svg class="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
                 </div>
                 <div class="bg-gray-100 dark:bg-gray-700 rounded-2xl rounded-tl-none px-3 py-2 max-w-[85%]">
                     <p class="text-xs text-gray-700 dark:text-gray-200 whitespace-pre-wrap">${escHtml(text)}</p>
                 </div>`;
-            container.appendChild(div);
         }
-
+        container.appendChild(div);
         container.scrollTop = container.scrollHeight;
     }
 
     function appendTyping() {
         const container = document.getElementById('chat-messages');
-        const id = 'typing-' + Date.now();
+        const id  = 'typing-' + Date.now();
         const div = document.createElement('div');
-        div.id = id;
-        div.className = 'flex gap-2';
+        div.id = id; div.className = 'flex gap-2';
         div.innerHTML = `
             <div class="w-7 h-7 bg-purple-100 dark:bg-purple-900/40 rounded-full flex items-center justify-center shrink-0 mt-0.5">
-                <svg class="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
-                </svg>
+                <svg class="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
             </div>
             <div class="bg-gray-100 dark:bg-gray-700 rounded-2xl rounded-tl-none px-3 py-2">
                 <div class="flex gap-1 items-center h-4">
@@ -691,14 +602,8 @@
         return id;
     }
 
-    function removeTyping(id) {
-        const el = document.getElementById(id);
-        if (el) el.remove();
-    }
+    function removeTyping(id) { const el = document.getElementById(id); if (el) el.remove(); }
 
-    // =======================================================================
-    // Helpers UI
-    // =======================================================================
     function setProgress(percent, message, label) {
         document.getElementById('loading-bar').style.width           = percent + '%';
         document.getElementById('loading-percent-label').textContent = percent + '%';
@@ -761,7 +666,6 @@
         document.getElementById('table-error').classList.add('hidden');
         document.getElementById('result-count').classList.add('hidden');
         document.getElementById('btn-export').classList.add('hidden');
-        // Ocultar botón AI al resetear
         document.getElementById('btn-ai-chat').style.display = 'none';
         closeAiChat();
     }
@@ -779,15 +683,16 @@
         window.location.href = url;
     }
 
-    // Credenciales
     function openCredModal() {
         const m = document.getElementById('cred-modal');
         m.classList.remove('hidden'); m.classList.add('flex');
     }
+
     function closeCredModal() {
         const m = document.getElementById('cred-modal');
         m.classList.add('hidden'); m.classList.remove('flex');
     }
+
     document.getElementById('cred-modal').addEventListener('click', function(e) {
         if (e.target === this) closeCredModal();
     });

@@ -96,7 +96,11 @@ body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size:12px; color:#
             <p>{{ strtoupper($customer) }}</p>
         </div>
     </div>
-    <div style="font-size:22px;font-weight:900;letter-spacing:1px;opacity:.95">🔷VNICOM</div>
+    @if($ovnicomLogo)
+        <img src="{{ $ovnicomLogo }}" style="max-height:45px;max-width:120px;object-fit:contain;" alt="OVNICOM">
+    @else
+        <div style="font-size:22px;font-weight:900;letter-spacing:1px;opacity:.95">🔷VNCOM</div>
+    @endif
 </div>
 
 {{-- KPIs --}}
@@ -330,7 +334,11 @@ $semanasKeys = collect($alarmaS)->keys()->sort()->values();
             <p>{{ strtoupper($customer) }}</p>
         </div>
     </div>
-    <div style="font-size:22px;font-weight:900;letter-spacing:1px;opacity:.95">🔷VNICOM</div>
+    @if($ovnicomLogo)
+        <img src="{{ $ovnicomLogo }}" style="max-height:45px;max-width:120px;object-fit:contain;" alt="OVNICOM">
+    @else
+        <div style="font-size:22px;font-weight:900;letter-spacing:1px;opacity:.95">🔷VNCOM</div>
+    @endif
 </div>
 
 <div class="table-section" style="padding-top:24px">

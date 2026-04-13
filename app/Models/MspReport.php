@@ -97,8 +97,13 @@ class MspReport extends Model
 
     public static function uniquePeriodos(): array
     {
-        return static::query()->select('periodo')->distinct()
-            ->whereNotNull('periodo')->orderBy('periodo')->pluck('periodo')->toArray();
+        return static::query()
+            ->select('periodo', \DB::raw('MAX(created_at) as last_created'))
+            ->whereNotNull('periodo')
+            ->groupBy('periodo')
+            ->orderByDesc('last_created')
+            ->pluck('periodo')
+            ->toArray();
     }
 
     public function client()

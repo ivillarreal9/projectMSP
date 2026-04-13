@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Models\MspCredential;
 use Illuminate\Support\Facades\Http;
 
 class Meta2Service
@@ -36,14 +35,16 @@ class Meta2Service
 
     public function __construct()
     {
-        $cred = MspCredential::latest()->first();
+        $username = config('services.msp.username');
+        $password = config('services.msp.password');
+        $baseUrl  = config('services.msp.base_url');
 
-        if (!$cred) {
+        if (!$username || !$password) {
             throw new \Exception('No hay credenciales MSP configuradas.');
         }
 
-        $this->baseUrl    = $cred->base_url;
-        $this->authHeader = 'Basic ' . base64_encode($cred->username . ':' . $cred->password);
+        $this->baseUrl    = $baseUrl;
+        $this->authHeader = 'Basic ' . base64_encode($username . ':' . $password);
     }
 
     /**
