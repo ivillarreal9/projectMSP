@@ -1,59 +1,271 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# 📡 projectMSP
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Sistema de gestión interno construido con **Laravel 13 + Tailwind CSS**, orientado a la administración de tickets, reportes, encuestas, clientes y comunicaciones de una empresa de telecomunicaciones/MSP.
 
-## About Laravel
+---
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## 🛠 Stack Tecnológico
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+| Tecnología | Versión | Uso |
+|---|---|---|
+| PHP | ^8.3 | Backend |
+| Laravel | ^13.0 | Framework principal |
+| Laravel Breeze | ^2.0 | Autenticación |
+| Laravel Sanctum | ^4.0 | API tokens |
+| Laravel AI | ^0.4.0 | Chat con IA integrado |
+| Maatwebsite/Excel | ^3.1 | Importación y exportación Excel |
+| Spatie/Browsershot | ^5.2 | Generación de PDFs via headless Chrome |
+| Tailwind CSS | — | Estilos (dark mode incluido) |
+| Vite | — | Bundler de assets |
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+---
 
-## Learning Laravel
+## 🚀 Instalación
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+```bash
+# 1. Clonar el repositorio
+git clone <url-del-repo>
+cd projectMSP
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+# 2. Setup automático (instala dependencias, genera key, migra y compila)
+composer run setup
 
-## Laravel Sponsors
+# 3. Iniciar el entorno de desarrollo
+composer run dev
+```
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+El comando `dev` levanta en paralelo:
+- `php artisan serve` — servidor PHP
+- `php artisan queue:listen` — procesamiento de colas
+- `php artisan pail` — logs en tiempo real
+- `npm run dev` — Vite con hot reload
 
-### Premium Partners
+---
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+## 📁 Módulos del Sistema
 
-## Contributing
+### 1. 🏠 Dashboard
+**Ruta:** `/dashboard`
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+Panel principal con accesos directos a todos los módulos. Muestra KPIs generales y navegación rápida con tarjetas hacia Ventas, Clientes, Ejecutivas y Reasignación.
 
-## Code of Conduct
+---
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+### 2. 👥 Usuarios
+**Ruta:** `/admin/users`  
+**Controlador:** `App\Http\Controllers\Admin\UserController`
 
-## Security Vulnerabilities
+CRUD completo de usuarios del sistema. Funciones:
+- Listar usuarios con paginación
+- Crear usuario con rol asignado
+- Editar nombre, email y rol
+- Eliminar usuario (no puede eliminarse a sí mismo)
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+**Roles disponibles:** `admin`, `editor`, `user`, `ventas`, entre otros...
 
-## License
+---
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+### 3. 📋 Reportes MSP (Masivos)
+**Ruta:** `/admin/reports/msp`
+
+Módulo de reportes para clientes importados desde Excel. Funciones:
+- **Importar Excel** — carga masiva de clientes con toda la información del archivo
+- **Ventana PDF** — dashboard con gráficas (pie chart de clasificación de incidentes) y tablas por cliente; generado con Browsershot
+- **Ventana de clientes** — visualización de la información de cada cliente
+- **Ventana de correos** — envío de correos masivos o individuales con SendGrid, soporta plantillas con variables dinámicas (`[[periodo]]`, `[[nombre]]`, etc.)
+- **Chat IA** — asistente integrado que puede consultar datos, generar PDFs y enviarlos por correo
+
+**Tablas:** `msp_imports`, `msp_clients`, `msp_plantillas`
+
+---
+
+### 4. 🔌 API MSP
+**Ruta:** `/admin/api-msp`  
+**Controlador:** `App\Http\Controllers\Admin\ApiMspController`
+
+Conecta con la API externa de MSP Manager para consultar tickets. Funciones:
+- **Guardar credenciales** — username, password y base URL de la API
+- **Consultar tickets** por rango de fechas
+- **Exportar a Excel** los tickets obtenidos
+- **Chat IA con SSE** — streaming de respuestas para consultas sobre los tickets
+
+**Modelo:** `MspCredential` (una sola credencial activa, se trunca al guardar)
+
+---
+
+### 5. 📞 META 2
+**Ruta:** `/admin/meta-2`  
+**Controlador:** `App\Http\Controllers\Admin\Meta2Controller`  
+**Servicio:** `App\Services\Meta2Service`
+
+Módulo de tickets de telefonía que consume la API de MSP Manager. Funciones:
+- Listar tickets con búsqueda y filtros por mes/año
+- Paginación manual con `LengthAwarePaginator`
+- **Modal de detalle** con campos dinámicos configurables
+- **Exportar a Excel**
+- **Exportar a PDF** con Browsershot
+- **Stream de IA (SSE)** para consultas en tiempo real
+
+Campos dinámicos configurados en `$requiredFieldIds` del servicio:
+- Causa, Ubicación, Detalle Reporte 2, Reporte 1, Provincia, Telefonía, Solución
+
+---
+
+### 6. 📊 Encuestas
+**Ruta:** `/admin/surveys`  
+**Controladores:** `SurveyTypeController`, `SurveyController`  
+**API:** `App\Http\Controllers\Api\SurveyApiController`
+
+Sistema autogestionable de encuestas de satisfacción. Funciones:
+- **Crear tipos de encuesta** con campos personalizados dinámicos
+- **Auto-generación de token/slug** por encuesta para integración con bot de WhatsApp
+- **Recepción de respuestas** vía API (`POST /api/surveys/{token}`) autenticada con Sanctum
+- **Ver respuestas** por tipo de encuesta
+- **Exportar a Excel** con formato estilizado
+
+**Tablas:** `survey_types`, `surveys`
+
+---
+
+### 7. 💼 Ventas
+**Ruta:** `/admin/sales`
+
+Módulo de seguimiento comercial con datos de Odoo. Sub-secciones:
+- **Dashboard** — KPIs y métricas generales de ventas
+- **Clientes** — actividad y riesgo por cuenta
+- **Ejecutivas** — métricas individuales por ejecutiva de ventas
+- **Reasignación** — gestión de cuentas en riesgo (`$kpis['atRisk']`)
+
+---
+
+### 8. 🔗 API Customers
+**Ruta:** `/admin/api-customers`  
+**Controlador:** `App\Http\Controllers\Admin\ApiCustomersController`
+
+Consulta la misma API de MSP Manager para obtener el listado de customers (clientes). Funciones:
+- Reutiliza las credenciales guardadas en el módulo API MSP
+- Muestra los clientes en tabla
+- **Exportar a Excel**
+
+---
+
+### 9. 🔀 Client Merge (MSP + ODOO)
+**Ruta:** `/admin/client-merge`
+
+Herramienta para combinar clientes de MSP con clientes de ODOO usando similitud de nombres (fuzzy matching). Funciones:
+- Subir dos archivos Excel: `MSP_CLIENTS.xlsx` y `ODOO_CLIENTS.xlsx`
+- Ajustar el umbral de similitud (50%–100%) con slider
+- Algoritmo de matching por nombre (limpia sufijos como `NOMBRE - 04001090`)
+- Si un cliente MSP tiene varios matches en ODOO, agrupa los `NumeroCuenta` y `RUC` separados por `|`
+- **Descarga Excel** con columnas: `CustomerID_MSP`, `CustomerName_MSP`, `NumeroCuenta`, `RUC`
+- Clientes sin match se incluyen con campos vacíos
+
+---
+
+## 🗄 Migraciones Principales
+
+| Migración | Descripción |
+|---|---|
+| `create_msp_credentials_table` | Credenciales de acceso a la API de MSP |
+| `create_msp_imports_table` | Historial de importaciones de Excel |
+| `create_msp_clients_table` | Clientes importados vía Excel |
+| `create_survey_types_table` | Tipos/templates de encuestas |
+| `create_surveys_table` | Respuestas de encuestas |
+| `create_msp_plantillas_table` | Plantillas de correo personalizadas |
+| `create_personal_access_tokens_table` | Tokens Sanctum para API de encuestas |
+
+---
+
+## 🎨 Características Globales
+
+- **Dark mode** con toggle persistente via `localStorage` (default: modo claro)
+- **Favicon y branding Ovnicom** en navbar y tabs del navegador
+- **Tailwind CSS** con `darkMode: 'class'` configurado
+- **IIFE en JS** para evitar conflictos de variables globales entre módulos
+- **Vistas Blade** con layouts `x-app-layout` y componentes reutilizables
+
+---
+
+## 🔐 Autenticación y Roles
+
+Basado en **Laravel Breeze** con campo `role` en la tabla `users`:
+
+| Rol | Acceso |
+|---|---|
+| `admin` | Acceso completo a todos los módulos |
+| `editor` | Módulos de consulta y reportes |
+| `ventas` | Módulo de Ventas |
+| `user` | Acceso básico |
+
+---
+
+## 🧰 Comandos Útiles
+
+```bash
+# Migraciones
+php artisan migrate
+php artisan migrate:fresh --seed
+
+# Limpiar caché
+php artisan view:clear
+php artisan cache:clear
+php artisan config:clear
+php artisan route:clear
+
+# Ver rutas del admin
+php artisan route:list | grep admin
+
+# Compilar assets (producción)
+npm run build
+
+# Ver logs (Windows)
+type storage\logs\laravel.log
+```
+
+---
+
+## 📌 Notas para Producción
+
+- Ejecutar `php artisan storage:link` para acceso público a imágenes
+- El logo para PDFs debe existir en `storage/app/public/logos/ovni.png`
+- Las imágenes/banner de correos funcionan con URL pública (no requiere base64)
+- La tabla `msp_plantillas` debe existir (`php artisan migrate`)
+- Configurar variables de entorno: `SENDGRID_API_KEY`, credenciales de MSP Manager
+
+---
+
+## 📂 Estructura de Carpetas Relevante
+
+```
+app/
+├── Http/Controllers/Admin/
+│   ├── ApiMspController.php
+│   ├── ApiCustomersController.php
+│   ├── Meta2Controller.php
+│   ├── ReportsMspController.php
+│   ├── SurveyTypeController.php
+│   ├── SurveyController.php
+│   ├── UserController.php
+│   └── ClientMergeController.php
+├── Services/
+│   ├── MspService.php
+│   └── Meta2Service.php
+├── Models/
+│   ├── MspCredential.php
+│   ├── MspClient.php
+│   ├── SurveyType.php
+│   └── Survey.php
+└── Exports/
+    ├── ApiMspExport.php
+    └── SurveyExport.php
+
+resources/views/admin/
+├── api-msp/
+├── api-customers/
+├── meta-2/
+├── reports/msp/
+├── surveys/
+├── sales/
+├── users/
+└── client-merge/
+```
