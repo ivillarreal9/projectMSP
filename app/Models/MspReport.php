@@ -3,10 +3,12 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Builder;
 
 class MspReport extends Model
 {
+    use HasFactory;
     protected $fillable = [
         'ticket_number', 'customer_name', 'location_name', 'ticket_title',
         'ticket_type', 'fecha_creacion', 'fecha_cierre', 'tiempo_vida_ticket',
@@ -41,7 +43,7 @@ class MspReport extends Model
         $q = static::forCustomer($customer);
         if ($periodo) $q->forPeriodo($periodo);
 
-        $tickets = $q->get();
+        $tickets = $q->orderByRaw("FIELD(tipo_ticket, 'Incidente', 'Solicitud')")->get();
 
         $incidentes = $tickets->where('tipo_ticket', 'Incidente');
         $solicitudes = $tickets->where('tipo_ticket', 'Solicitud');

@@ -5,6 +5,8 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="csrf-token" content="{{ csrf_token() }}">
 
+        <link rel="icon" type="image/png" href="{{ asset('favicon.png') }}">
+
         <title>{{ config('app.name', 'Laravel') }}</title>
 
         <!-- Fonts -->
@@ -13,6 +15,17 @@
 
         <!-- Scripts -->
         @vite(['resources/css/app.css', 'resources/js/app.js'])
+
+        {{-- Aplicar tema ANTES de renderizar para evitar flash --}}
+        <script>
+            // Por defecto: modo claro. Solo dark si el usuario lo eligió explícitamente.
+            if (localStorage.theme === 'dark') {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+                localStorage.theme = 'light';
+            }
+        </script>
     </head>
     <body class="font-sans antialiased">
         <div class="min-h-screen bg-gray-100 dark:bg-gray-900">
@@ -32,6 +45,40 @@
                 {{ $slot }}
             </main>
         </div>
+
+        <script>
+            function toggleTheme() {
+                if (document.documentElement.classList.contains('dark')) {
+                    document.documentElement.classList.remove('dark');
+                    localStorage.theme = 'light';
+                    const moon = document.getElementById('icon-moon');
+                    const sun  = document.getElementById('icon-sun');
+                    if (moon) moon.classList.remove('hidden');
+                    if (sun)  sun.classList.add('hidden');
+                } else {
+                    document.documentElement.classList.add('dark');
+                    localStorage.theme = 'dark';
+                    const moon = document.getElementById('icon-moon');
+                    const sun  = document.getElementById('icon-sun');
+                    if (moon) moon.classList.add('hidden');
+                    if (sun)  sun.classList.remove('hidden');
+                }
+            }
+
+            document.addEventListener('DOMContentLoaded', function() {
+                const moon = document.getElementById('icon-moon');
+                const sun  = document.getElementById('icon-sun');
+                if (!moon || !sun) return;
+                if (document.documentElement.classList.contains('dark')) {
+                    moon.classList.add('hidden');
+                    sun.classList.remove('hidden');
+                } else {
+                    moon.classList.remove('hidden');
+                    sun.classList.add('hidden');
+                }
+            });
+        </script>
+
         @stack('scripts')
     </body>
 </html>

@@ -12,6 +12,7 @@ use App\Http\Controllers\Admin\Sales\SalesClientsController;
 use App\Http\Controllers\Admin\Sales\SalesExecutivesController;
 use App\Http\Controllers\Admin\Sales\SalesReassignController;
 use App\Http\Controllers\Admin\MspReportController;
+use App\Http\Controllers\Admin\MspPlantillaController;
 use App\Http\Controllers\Admin\ClientMergeController;
 use App\Http\Controllers\Admin\SurveyTypeController;
 use App\Http\Controllers\Admin\SurveyController;
@@ -76,6 +77,12 @@ Route::middleware(['auth', 'role:admin'])
 
             // Configuración
             Route::post('/settings', [MspReportController::class, 'saveSettings'])->name('settings.save');
+
+            // Plantillas
+            Route::get('/plantillas',         [MspPlantillaController::class, 'index'])->name('plantillas.index');
+            Route::post('/plantillas',        [MspPlantillaController::class, 'store'])->name('plantillas.store');
+            Route::delete('/plantillas/{plantilla}', [MspPlantillaController::class, 'destroy'])->name('plantillas.destroy');
+            Route::post('/plantillas/{plantilla}', [MspPlantillaController::class, 'update'])->name('plantillas.update');
         });
 
         // ── Encuestas ─────────────────────────────────────────────────────────

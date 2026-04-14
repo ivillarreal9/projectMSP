@@ -132,9 +132,9 @@
         @php
         $kpis = [
             ['label'=>'Cant. Incidentes',    'value'=> $stats['cant_incidentes'],    'icon'=>'fa-triangle-exclamation','color'=>'text-red-600',  'bg'=>'bg-red-50'],
-            ['label'=>'T. Prom. Incidentes', 'value'=> round($stats['tiempo_prom_incidentes'],1), 'icon'=>'fa-clock','color'=>'text-orange-600','bg'=>'bg-orange-50', 'suffix'=>' días'],
+            ['label'=>'T. Prom. Incidentes', 'value'=> round($stats['tiempo_prom_incidentes'],3), 'icon'=>'fa-clock','color'=>'text-orange-600','bg'=>'bg-orange-50', 'suffix'=>' días'],
             ['label'=>'Cant. Solicitudes',   'value'=> $stats['cant_solicitudes'],   'icon'=>'fa-clipboard-list',      'color'=>'text-blue-600', 'bg'=>'bg-blue-50'],
-            ['label'=>'T. Prom. Solicitudes','value'=> round($stats['tiempo_prom_solicitudes'],1),'icon'=>'fa-clock','color'=>'text-teal-600',  'bg'=>'bg-teal-50',   'suffix'=>' días'],
+            ['label'=>'T. Prom. Solicitudes','value'=> round($stats['tiempo_prom_solicitudes'],3),'icon'=>'fa-clock','color'=>'text-teal-600',  'bg'=>'bg-teal-50',   'suffix'=>' días'],
         ];
         @endphp
         @foreach($kpis as $kpi)

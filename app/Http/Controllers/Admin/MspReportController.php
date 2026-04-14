@@ -7,7 +7,8 @@ use App\Imports\MspReportsImport;
 use App\Models\MspReport;
 use App\Models\MspClient;
 use App\Models\MspUploadBatch;
-use App\Services\SharePointService;  // ← AGREGAR ESTA LÍNEA
+use App\Models\MspPlantilla;
+use App\Services\SharePointService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -23,13 +24,11 @@ class MspReportController extends Controller
 
     public function index()
     {
-        // NO cargar SharePoint al inicio
-        $files       = [];
-        $spError     = null;
+        $files          = [];
+        $spError        = null;
         $hasCredentials = app(\App\Services\SharePointService::class)->hasCredentials();
-
-        $batches  = \App\Models\MspUploadBatch::orderByDesc('created_at')->take(10)->get();
-        $settings = \App\Models\MspSetting::allAsArray();
+        $batches        = \App\Models\MspUploadBatch::orderByDesc('created_at')->take(10)->get();
+        $settings       = \App\Models\MspSetting::allAsArray();
 
         return view('admin.reports.msp.index', compact(
             'files', 'spError', 'hasCredentials', 'batches', 'settings'
@@ -46,19 +45,17 @@ class MspReportController extends Controller
         $file    = $request->file('excel_file');
         $periodo = trim($request->input('periodo'));
 
-        // Crear registro de batch
         $batch = \App\Models\MspUploadBatch::create([
-            'filename'         => $file->getClientOriginalName(),
-            'periodo'          => $periodo,
-            'total_registros'  => 0,
-            'clientes_unicos'  => 0,
+            'filename'        => $file->getClientOriginalName(),
+            'periodo'         => $periodo,
+            'total_registros' => 0,
+            'clientes_unicos' => 0,
         ]);
 
         Excel::import(new MspReportsImport($periodo, $batch->id), $file);
 
-        // Actualizar estadísticas del batch
-        $total   = MspReport::where('periodo', $periodo)->count();
-        $unicos  = MspReport::where('periodo', $periodo)->distinct('customer_name')->count();
+        $total  = MspReport::where('batch_id', $batch->id)->count();
+        $unicos = MspReport::where('batch_id', $batch->id)->distinct('customer_name')->count();
         $batch->update(['total_registros' => $total, 'clientes_unicos' => $unicos]);
 
         return back()->with('success', "✅ Importados {$total} registros de {$unicos} clientes para el período {$periodo}.");
@@ -70,12 +67,10 @@ class MspReportController extends Controller
 
     public function clientes(Request $request)
     {
-        // DESPUÉS
         $periodos = MspReport::uniquePeriodos();
         $periodo  = $request->input('periodo', $periodos[count($periodos) - 1] ?? null);
         $search   = $request->input('search', '');
 
-        // Obtener nombres únicos del período con stats
         $statsQuery = MspReport::query()
             ->select(
                 'customer_name',
@@ -90,21 +85,18 @@ class MspReportController extends Controller
 
         $statsMap = $statsQuery->get()->keyBy('customer_name');
 
-        // Consultar msp_clients para info del cliente
         $clientesQuery = MspClient::query();
 
         if ($search) {
             $clientesQuery->where('customer_name', 'like', "%{$search}%");
         }
 
-        // Solo mostrar clientes que tienen registros en el período
         if ($periodo) {
             $clientesQuery->whereIn('customer_name', $statsMap->keys());
         }
 
         $clientes = $clientesQuery->orderBy('customer_name')->paginate(30)->withQueryString();
 
-        // Agregar stats a cada cliente
         $clientes->getCollection()->transform(function ($cliente) use ($statsMap) {
             $stats = $statsMap->get($cliente->customer_name);
             $cliente->total_tickets = $stats?->total_tickets ?? 0;
@@ -135,10 +127,10 @@ class MspReportController extends Controller
 
     public function pdfPreview(Request $request, string $customer)
     {
-        $customer = urldecode($customer); // ← AGREGAR
-        $periodo  = $request->input('periodo');
-        $stats    = MspReport::statsForCustomer($customer, $periodo);
-        $logoUrl  = $this->resolveLogoUrl($customer, $periodo);
+        $customer    = urldecode($customer);
+        $periodo     = $request->input('periodo');
+        $stats       = MspReport::statsForCustomer($customer, $periodo);
+        $logoUrl     = $this->resolveLogoUrl($customer, $periodo);
         $ovnicomLogo = $this->getOvnicomLogo();
 
         return view('admin.reports.msp.pdf_template', compact('customer', 'stats', 'periodo', 'logoUrl', 'ovnicomLogo'));
@@ -146,10 +138,10 @@ class MspReportController extends Controller
 
     public function pdfDownload(Request $request, string $customer)
     {
-        $customer = urldecode($customer); // ← AGREGAR
-        $periodo  = $request->input('periodo');
-        $stats    = MspReport::statsForCustomer($customer, $periodo);
-        $logoUrl  = $this->resolveLogoUrl($customer, $periodo);
+        $customer    = urldecode($customer);
+        $periodo     = $request->input('periodo');
+        $stats       = MspReport::statsForCustomer($customer, $periodo);
+        $logoUrl     = $this->resolveLogoUrl($customer, $periodo);
         $ovnicomLogo = $this->getOvnicomLogo();
 
         $html     = view('admin.reports.msp.pdf_template', compact('customer', 'stats', 'periodo', 'logoUrl', 'ovnicomLogo'))->render();
@@ -178,13 +170,11 @@ class MspReportController extends Controller
         $periodos = MspReport::uniquePeriodos();
         $periodo  = $request->input('periodo', $periodos[0] ?? null);
 
-        // Obtener clientes del período desde msp_reports
         $customerNames = MspReport::query()
             ->where('periodo', $periodo)
             ->distinct()
             ->pluck('customer_name');
 
-        // Traer info desde msp_clients
         $clientes = MspClient::whereIn('customer_name', $customerNames)
             ->orderBy('customer_name')
             ->get();
@@ -205,12 +195,49 @@ class MspReportController extends Controller
         $customer = $request->input('customer_name');
         $periodo  = $request->input('periodo');
 
-        // Generar PDF
+        // Obtener stats y cliente para variables
         $stats   = MspReport::statsForCustomer($customer, $periodo);
-        $logoUrl = $this->resolveLogoUrl($customer, $periodo);
-        $ovnicomLogo = $this->getOvnicomLogo(); // ← AGREGAR
+        $cliente = MspClient::where('customer_name', $customer)->first();
 
-        $html    = view('admin.reports.msp.pdf_template', compact('customer', 'stats', 'periodo', 'logoUrl', 'ovnicomLogo'))->render();
+        // Valores de variables
+        $variables = [
+            '[[cliente]]'     => $customer,
+            '[[periodo]]'     => $periodo,
+            '[[incidentes]]'  => $stats['cant_incidentes'],
+            '[[solicitudes]]' => $stats['cant_solicitudes'],
+            '[[t_inc]]'       => number_format($stats['tiempo_prom_incidentes'], 3),
+            '[[t_sol]]'       => number_format($stats['tiempo_prom_solicitudes'], 3),
+            '[[cuenta]]'      => $cliente?->numero_cuenta ?? 'N/A',
+        ];
+
+        // Reemplazar variables en asunto
+        $subject = str_replace(array_keys($variables), array_values($variables), $request->input('subject'));
+
+        // Reemplazar variables en mensaje
+        $mensaje = $request->input('mensaje', '');
+        if ($mensaje) {
+            $mensaje = str_replace(array_keys($variables), array_values($variables), $mensaje);
+        }
+
+        // Obtener banner de plantilla si existe (imagen adjunta al correo como header)
+        $bannerHtml   = '';
+        $plantillaId  = $request->input('plantilla_id');
+        if ($plantillaId) {
+            $plantilla = MspPlantilla::find($plantillaId);
+            if ($plantilla && $plantilla->imagen_path) {
+                $imagenUrl = Storage::disk('public')->url($plantilla->imagen_path);
+                $bannerHtml = "<div style='text-align:center;margin-bottom:16px;'>
+                    <img src='{$imagenUrl}' style='max-width:600px;width:100%;border-radius:8px;' alt='Banner'>
+                </div>";
+            }
+        }
+
+        // Generar PDF
+        $logoUrl     = $this->resolveLogoUrl($customer, $periodo);
+        $ovnicomLogo = $this->getOvnicomLogo();
+        $html        = view('admin.reports.msp.pdf_template',
+            compact('customer', 'stats', 'periodo', 'logoUrl', 'ovnicomLogo')
+        )->render();
 
         $filename = 'MSP-' . str_replace([' ', '/'], '-', $customer) . '-' . $periodo . '.pdf';
         $pdfPath  = storage_path("app/public/msp_pdfs/{$filename}");
@@ -221,24 +248,29 @@ class MspReportController extends Controller
 
         Browsershot::html($html)->format('A4')->showBackground()->waitUntilNetworkIdle()->save($pdfPath);
 
+        // Construir cuerpo del correo
+        $bodyHtml = $bannerHtml;
+        if ($mensaje) {
+            $bodyHtml .= nl2br(e($mensaje));
+        } else {
+            $bodyHtml .= "<p>Estimado cliente,<br>Adjunto encontrará su informe MSP del período <strong>{$periodo}</strong>.</p>";
+        }
+
         // Enviar vía SendGrid
         $sendgridKey = config('services.sendgrid.api_key');
         $fromEmail   = config('services.sendgrid.from', 'ivillarreal@ovni.com');
         $fromName    = 'Ovnicom MSP Reports';
-
         $pdfContent  = base64_encode(file_get_contents($pdfPath));
 
         $payload = [
             'personalizations' => [[
-                'to' => [['email' => $request->input('email'), 'name' => $customer]],
-                'subject' => $request->input('subject'),
+                'to'      => [['email' => $request->input('email'), 'name' => $customer]],
+                'subject' => $subject,
             ]],
-            'from' => ['email' => $fromEmail, 'name' => $fromName],
+            'from'    => ['email' => $fromEmail, 'name' => $fromName],
             'content' => [[
                 'type'  => 'text/html',
-                'value' => $request->input('mensaje')
-                    ? nl2br($request->input('mensaje'))
-                    : "<p>Estimado cliente,<br>Adjunto encontrará su informe MSP del período <strong>{$periodo}</strong>.</p>",
+                'value' => $bodyHtml,
             ]],
             'attachments' => [[
                 'content'     => $pdfContent,
@@ -261,11 +293,11 @@ class MspReportController extends Controller
     public function enviarMasivo(Request $request)
     {
         $request->validate([
-            'periodo'   => 'required|string',
-            'clientes'  => 'required|array',
+            'periodo'                  => 'required|string',
+            'clientes'                 => 'required|array',
             'clientes.*.customer_name' => 'required|string',
             'clientes.*.email'         => 'required|email',
-            'subject'   => 'required|string|max:200',
+            'subject'                  => 'required|string|max:200',
         ]);
 
         $periodo  = $request->input('periodo');
@@ -294,7 +326,7 @@ class MspReportController extends Controller
     }
 
     // =========================================================================
-    // Chat IA — responde preguntas y puede generar/enviar PDFs
+    // Chat IA
     // =========================================================================
 
     public function chat(Request $request)
@@ -309,9 +341,8 @@ class MspReportController extends Controller
         $message = $request->input('message');
         $history = $request->input('history', []);
 
-        // Contexto de datos para la IA
-        $periodos  = MspReport::uniquePeriodos();
-        $clientes  = MspReport::query()->select('customer_name')->distinct()->pluck('customer_name')->toArray();
+        $periodos = MspReport::uniquePeriodos();
+        $clientes = MspReport::query()->select('customer_name')->distinct()->pluck('customer_name')->toArray();
 
         $systemPrompt = "Eres un asistente experto en reportes MSP (Managed Service Provider) de Ovnicom. 
 Tienes acceso a datos de tickets de soporte técnico de clientes empresariales.
@@ -329,23 +360,21 @@ Puedes ayudar a:
 Cuando el usuario pida descargar o enviar un PDF, responde ÚNICAMENTE con el JSON de acción.
 Para cualquier otra consulta responde en español de forma clara y concisa.";
 
-        // Construir mensajes para la IA
-        $messages = array_map(fn($h) => ['role' => $h['role'], 'content' => $h['content']], $history);
-
-        // Si la pregunta involucra datos de un cliente específico, adjuntar stats
+        $messages     = array_map(fn($h) => ['role' => $h['role'], 'content' => $h['content']], $history);
         $statsContext = '';
+
         foreach ($clientes as $c) {
             if (stripos($message, $c) !== false) {
                 $periodo = $periodos[count($periodos) - 1] ?? null;
-                $stats = MspReport::statsForCustomer($c, $periodo);
+                $stats   = MspReport::statsForCustomer($c, $periodo);
                 $statsContext = "\n\nDATOS ACTUALES DE {$c} (período {$periodo}):\n" . json_encode([
-                    'total_tickets'          => $stats['total_tickets'],
-                    'cant_incidentes'        => $stats['cant_incidentes'],
-                    'cant_solicitudes'       => $stats['cant_solicitudes'],
-                    'tiempo_prom_incidentes' => round($stats['tiempo_prom_incidentes'], 2),
-                    'tiempo_prom_solicitudes'=> round($stats['tiempo_prom_solicitudes'], 2),
-                    'por_ubicacion_incidentes' => $stats['por_ubicacion_incidentes'],
-                    'alarma_vs_reportado'    => $stats['alarma_vs_reportado'],
+                    'total_tickets'           => $stats['total_tickets'],
+                    'cant_incidentes'         => $stats['cant_incidentes'],
+                    'cant_solicitudes'        => $stats['cant_solicitudes'],
+                    'tiempo_prom_incidentes'  => round($stats['tiempo_prom_incidentes'], 2),
+                    'tiempo_prom_solicitudes' => round($stats['tiempo_prom_solicitudes'], 2),
+                    'por_ubicacion_incidentes'=> $stats['por_ubicacion_incidentes'],
+                    'alarma_vs_reportado'     => $stats['alarma_vs_reportado'],
                 ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
                 break;
             }
@@ -353,13 +382,10 @@ Para cualquier otra consulta responde en español de forma clara y concisa.";
 
         $messages[] = ['role' => 'user', 'content' => $message . $statsContext];
 
-        // Llamar a Laravel AI (OpenAI/Anthropic según config)
-        $ai = app(\Laravel\AI\AI::class);
+        $ai       = app(\Laravel\AI\AI::class);
         $response = $ai->ask($systemPrompt, $messages);
+        $content  = $response->content ?? $response->text ?? (string)$response;
 
-        $content = $response->content ?? $response->text ?? (string)$response;
-
-        // Detectar si es una acción JSON
         $action = null;
         if (str_starts_with(trim($content), '{')) {
             try {
@@ -373,6 +399,7 @@ Para cualquier otra consulta responde en español de forma clara y concisa.";
     // =========================================================================
     // Helpers
     // =========================================================================
+
     private function resolveLogoUrl(string $customer, ?string $periodo): ?string
     {
         $cliente = MspClient::where('customer_name', $customer)->first();
@@ -381,18 +408,22 @@ Para cualquier otra consulta responde en español de forma clara y concisa.";
 
     private function getOvnicomLogo(): ?string
     {
-        $path = storage_path('app/public/logos/ovnicom.jpg');
+        $path = storage_path('app/public/logos/OVNICOM_LOGO.png');
         if (!file_exists($path)) return null;
         $mime   = mime_content_type($path);
         $base64 = base64_encode(file_get_contents($path));
         return "data:{$mime};base64,{$base64}";
     }
 
+    // =========================================================================
+    // SharePoint
+    // =========================================================================
+
     public function sharepointIndex(Request $request)
     {
-        $sp      = app(\App\Services\SharePointService::class);
-        $files   = [];
-        $error   = null;
+        $sp    = app(\App\Services\SharePointService::class);
+        $files = [];
+        $error = null;
 
         try {
             $files = $sp->listExcelFiles();
@@ -400,19 +431,16 @@ Para cualquier otra consulta responde en español de forma clara y concisa.";
             $error = $e->getMessage();
         }
 
-        // Si es petición AJAX/fetch devolver JSON
         if ($request->ajax() || $request->wantsJson()) {
-            if ($error) {
-                return response()->json(['error' => $error]);
-            }
-            return response()->json(['files' => $files]);
+            return $error
+                ? response()->json(['error' => $error])
+                : response()->json(['files' => $files]);
         }
 
-        // Si es petición normal devolver vista
         $periodos = \App\Models\MspReport::uniquePeriodos();
         return view('admin.reports.msp.sharepoint', compact('files', 'error', 'periodos'));
     }
-    
+
     public function sharepointImport(Request $request)
     {
         $request->validate([
@@ -426,12 +454,9 @@ Para cualquier otra consulta responde en español de forma clara y concisa.";
         $itemId   = $request->input('item_id');
 
         try {
-            // Descargar usando item_id si está disponible, sino por nombre
-            if ($itemId) {
-                $tempPath = $sp->downloadFileById($itemId, $filename);
-            } else {
-                $tempPath = $sp->downloadFileByName($filename);
-            }
+            $tempPath = $itemId
+                ? $sp->downloadFileById($itemId, $filename)
+                : $sp->downloadFileByName($filename);
 
             $batch = \App\Models\MspUploadBatch::create([
                 'filename'        => $filename . ' (SharePoint)',
@@ -467,16 +492,10 @@ Para cualquier otra consulta responde en español de forma clara y concisa.";
         ];
 
         foreach ($fields as $field) {
-            $value = $request->input($field);
-            // Solo actualizar si se envió un valor no vacío
-            // Para campos de contraseña, si viene vacío, no sobreescribir
+            $value    = $request->input($field);
             $isSecret = in_array($field, ['azure_client_secret', 'sendgrid_api_key']);
-            if ($isSecret && empty($value)) {
-                continue; // No sobreescribir secretos si se deja en blanco
-            }
-            if ($value !== null) {
-                \App\Models\MspSetting::set($field, $value);
-            }
+            if ($isSecret && empty($value)) continue;
+            if ($value !== null) \App\Models\MspSetting::set($field, $value);
         }
 
         return back()->with('success', '✅ Credenciales guardadas correctamente.');
@@ -497,13 +516,10 @@ Para cualquier otra consulta responde en español de forma clara y concisa.";
             'numero_cuenta' => $request->input('numero_cuenta'),
         ];
 
-        // Subir logo si se envió
         if ($request->hasFile('logo')) {
-            $path = $request->file('logo')->store('logos/clientes', 'public');
-            $data['logo_path'] = $path;
+            $data['logo_path'] = $request->file('logo')->store('logos/clientes', 'public');
         }
 
-        // Guardar en msp_clients (fuente de verdad)
         MspClient::updateOrCreate(
             ['customer_name' => $customer],
             array_filter($data, fn($v) => $v !== null)
@@ -511,7 +527,11 @@ Para cualquier otra consulta responde en español de forma clara y concisa.";
 
         return back()->with('success', '✅ Información del cliente actualizada correctamente.');
     }
-    
+
+    // =========================================================================
+    // Descarga masiva de PDFs
+    // =========================================================================
+
     public function descargaMasivaIndex(Request $request)
     {
         $periodos = MspReport::uniquePeriodos();
@@ -519,13 +539,8 @@ Para cualquier otra consulta responde en español de forma clara y concisa.";
 
         $clientes = collect();
         if ($periodo) {
-            $customerNames = MspReport::where('periodo', $periodo)
-                ->distinct()
-                ->pluck('customer_name');
-
-            $clientes = MspClient::whereIn('customer_name', $customerNames)
-                ->orderBy('customer_name')
-                ->get();
+            $customerNames = MspReport::where('periodo', $periodo)->distinct()->pluck('customer_name');
+            $clientes = MspClient::whereIn('customer_name', $customerNames)->orderBy('customer_name')->get();
         }
 
         return view('admin.reports.msp.descarga_masiva', compact('periodos', 'periodo', 'clientes'));
@@ -534,20 +549,18 @@ Para cualquier otra consulta responde en español de forma clara y concisa.";
     public function descargaMasivaZip(Request $request)
     {
         $request->validate([
-            'periodo'   => 'required|string',
-            'clientes'  => 'required|array|min:1|max:30',
-            'clientes.*'=> 'required|string',
+            'periodo'    => 'required|string',
+            'clientes'   => 'required|array|min:1|max:30',
+            'clientes.*' => 'required|string',
         ]);
 
-        $periodo  = $request->input('periodo');
-        $nombres  = $request->input('clientes');
+        $periodo = $request->input('periodo');
+        $nombres = $request->input('clientes');
 
         $zipName = 'MSP-Reportes-' . str_replace(' ', '-', $periodo) . '.zip';
         $zipPath = storage_path("app/public/msp_pdfs/zips/{$zipName}");
 
-        if (!is_dir(dirname($zipPath))) {
-            mkdir(dirname($zipPath), 0755, true);
-        }
+        if (!is_dir(dirname($zipPath))) mkdir(dirname($zipPath), 0755, true);
 
         $zip = new \ZipArchive();
         $zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE);
@@ -559,34 +572,23 @@ Para cualquier otra consulta responde en español de forma clara y concisa.";
                 $ovnicomLogo = $this->getOvnicomLogo();
 
                 $html = view('admin.reports.msp.pdf_template',
-                    compact('stats', 'periodo', 'logoUrl', 'ovnicomLogo')
-                    + ['customer' => $customerName]
+                    compact('stats', 'periodo', 'logoUrl', 'ovnicomLogo') + ['customer' => $customerName]
                 )->render();
 
                 $filename = 'MSP-' . str_replace([' ', '/', ','], '-', $customerName) . '-' . str_replace(' ', '-', $periodo) . '.pdf';
                 $pdfPath  = storage_path("app/public/msp_pdfs/{$filename}");
 
-                if (!is_dir(dirname($pdfPath))) {
-                    mkdir(dirname($pdfPath), 0755, true);
-                }
+                if (!is_dir(dirname($pdfPath))) mkdir(dirname($pdfPath), 0755, true);
 
-                Browsershot::html($html)
-                    ->format('A4')
-                    ->showBackground()
-                    ->waitUntilNetworkIdle()
-                    ->save($pdfPath);
-
+                Browsershot::html($html)->format('A4')->showBackground()->waitUntilNetworkIdle()->save($pdfPath);
                 $zip->addFile($pdfPath, $filename);
 
-            } catch (\Throwable $e) {
-                // Continuar con el siguiente cliente si uno falla
+            } catch (\Throwable) {
                 continue;
             }
         }
 
         $zip->close();
-
         return response()->download($zipPath, $zipName)->deleteFileAfterSend(true);
     }
-
 }

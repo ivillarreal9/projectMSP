@@ -27,11 +27,13 @@ body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size:12px; color:#
 .kpi-box { border:1px solid #e0e0e0; border-radius:8px; padding:14px 18px; background:#fff; }
 .kpi-value { font-size:36px; font-weight:900; color:#1a1a2e; line-height:1; }
 .kpi-label { font-size:11px; color:#666; margin-top:4px; }
+.kpi-empty { font-size:10px; color:#d4520a; font-style:italic; margin-top:6px; }
 .observacion { border:1px solid #f0e0c8; border-radius:8px; padding:14px 18px; background:#fdf6ee; }
-.observacion h4 { font-size:12px; font-weight:700; color:#8b4513; margin-bottom:8px; }
+.observacion h4 { font-size:14px; font-weight:700; color:#8b4513; margin-bottom:8px; }
 .observacion ul { padding-left:16px; }
-.observacion li { font-size:11px; color:#555; margin-bottom:3px; }
+.observacion li { font-size:12px; color:#555; margin-bottom:5px; line-height:1.5; }
 .observacion li strong { color:#333; }
+.observacion li.alert { color:#d4520a; }
 
 /* ── SECTION TITLE ── */
 .section-title { font-size:15px; font-weight:800; color:#1a1a2e; margin:20px 28px 12px; text-transform:uppercase; letter-spacing:.5px; }
@@ -40,6 +42,7 @@ body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size:12px; color:#
 .charts-grid { padding:0 28px; display:grid; grid-template-columns:1fr 1fr; gap:18px; }
 .chart-card { border:1px solid #e8e8e8; border-radius:8px; padding:18px; background:#fff; }
 .chart-card h5 { font-size:12px; font-weight:700; color:#333; margin-bottom:14px; text-align:center; }
+.no-data { font-size:10px; color:#d4520a; text-align:center; padding:20px 0; font-style:italic; }
 
 /* ── BARRAS HORIZONTALES ── */
 .chart-bar-row { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
@@ -99,7 +102,7 @@ body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size:12px; color:#
     @if($ovnicomLogo)
         <img src="{{ $ovnicomLogo }}" style="max-height:45px;max-width:120px;object-fit:contain;" alt="OVNICOM">
     @else
-        <div style="font-size:22px;font-weight:900;letter-spacing:1px;opacity:.95">🔷VNCOM</div>
+        <div style="font-size:22px;font-weight:900;letter-spacing:1px;opacity:.95">🔷VNICOM</div>
     @endif
 </div>
 
@@ -108,21 +111,27 @@ body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size:12px; color:#
     <div class="kpis-grid">
         <div style="display:grid;gap:12px;">
             <div class="kpi-box">
-                <div class="kpi-value">{{ $stats['cant_incidentes'] }}</div>
+                <div class="kpi-value">{{ $stats['cant_incidentes'] > 0 ? $stats['cant_incidentes'] : '—' }}</div>
                 <div class="kpi-label">Cant. Incidentes</div>
+                @if($stats['cant_incidentes'] == 0)
+                    <div class="kpi-empty">• No se generó ticket de incidente este mes.</div>
+                @endif
             </div>
             <div class="kpi-box">
-                <div class="kpi-value">{{ $stats['cant_solicitudes'] }}</div>
+                <div class="kpi-value">{{ $stats['cant_solicitudes'] > 0 ? $stats['cant_solicitudes'] : '—' }}</div>
                 <div class="kpi-label">Cant. de Solicitudes</div>
+                @if($stats['cant_solicitudes'] == 0)
+                    <div class="kpi-empty">• No se generó ticket de solicitud este mes.</div>
+                @endif
             </div>
         </div>
         <div style="display:grid;gap:12px;">
             <div class="kpi-box">
-                <div class="kpi-value">{{ number_format($stats['tiempo_prom_incidentes'],1) }}</div>
+                <div class="kpi-value">{{ $stats['cant_incidentes'] > 0 ? number_format($stats['tiempo_prom_incidentes'],3) : '—' }}</div>
                 <div class="kpi-label">Tiempo Promedio de Atención - Incidentes</div>
             </div>
             <div class="kpi-box">
-                <div class="kpi-value">{{ number_format($stats['tiempo_prom_solicitudes'],1) }}</div>
+                <div class="kpi-value">{{ $stats['cant_solicitudes'] > 0 ? number_format($stats['tiempo_prom_solicitudes'],3) : '—' }}</div>
                 <div class="kpi-label">Tiempo Promedio de Atención - Solicitudes</div>
             </div>
         </div>
@@ -132,10 +141,16 @@ body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size:12px; color:#
                 <li><strong>Unidad de tiempo:</strong> Días.</li>
                 <li><strong>Gráfico Recuento de tickets:</strong>
                     <ul style="padding-left:12px;margin-top:4px;">
-                        <li style="margin-bottom:3px;">○ <strong>Alarma:</strong> Incidente generado proactivamente posterior al análisis de Monitoreo.</li>
-                        <li>○ <strong>Reportado:</strong> Incidente generado al momento que el cliente reporta.</li>
+                        <li style="margin-bottom:3px;"> <strong>Alarma:</strong> Incidente generado proactivamente posterior al análisis de Monitoreo.</li>
+                        <li> <strong>Reportado:</strong> Incidente generado al momento que el cliente reporta.</li>
                     </ul>
                 </li>
+                @if($stats['cant_incidentes'] == 0)
+                    <li class="alert" style="margin-top:6px;"> No se generó ticket de incidente este mes.</li>
+                @endif
+                @if($stats['cant_solicitudes'] == 0)
+                    <li class="alert" style="margin-top:4px;"> No se generó ticket de solicitud este mes.</li>
+                @endif
             </ul>
         </div>
     </div>
@@ -171,7 +186,6 @@ foreach ($clasif as $label => $val) {
     next($pieColors);
     $startAngle = $end;
 }
-// Después
 if (!function_exists('svgArc')) {
     function svgArc($cx,$cy,$r,$startDeg,$endDeg) {
         $s = deg2rad($startDeg); $e = deg2rad($endDeg);
@@ -190,133 +204,143 @@ $semanasKeys = collect($alarmaS)->keys()->sort()->values();
     {{-- Solicitudes por ubicación --}}
     <div class="chart-card">
         <h5>Solicitudes generadas por Ubicación</h5>
-        @foreach($solUbic->take(7) as $loc => $cnt)
-        @php $w = max(5, round($cnt/$maxSol*100)); @endphp
-        <div class="chart-bar-row">
-            <div class="chart-bar-label">{{ $loc }}</div>
-            <div class="chart-bar-wrap">
-                <div style="display:flex; align-items:center; gap:6px;">
-                    <div class="chart-bar-wrap" style="flex:1;">
-                        <div class="chart-bar-fill" style="width:{{ $w }}%"></div>
+        @if($solUbic->isEmpty())
+            <p class="no-data">No se generaron tickets de solicitud este mes.</p>
+        @else
+            @foreach($solUbic->take(7) as $loc => $cnt)
+            @php $w = max(5, round($cnt/$maxSol*100)); @endphp
+            <div class="chart-bar-row">
+                <div class="chart-bar-label">{{ $loc }}</div>
+                <div class="chart-bar-wrap">
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <div class="chart-bar-wrap" style="flex:1;">
+                            <div class="chart-bar-fill" style="width:{{ $w }}%"></div>
+                        </div>
+                        <span style="font-size:10px;font-weight:700;color:#333;flex-shrink:0;min-width:16px;">{{ $cnt }}</span>
                     </div>
-                    <span style="font-size:10px;font-weight:700;color:#333;flex-shrink:0;min-width:16px;">{{ $cnt }}</span>
                 </div>
             </div>
-        </div>
-        @endforeach
+            @endforeach
+        @endif
     </div>
 
     {{-- Incidentes por ubicación --}}
     <div class="chart-card">
         <h5>Incidentes generados por Ubicación</h5>
-        @foreach($incUbic->take(7) as $loc => $cnt)
-        @php $w = max(5, round($cnt/$maxInc*100)); @endphp
-        <div class="chart-bar-row">
-            <div class="chart-bar-label">{{ $loc }}</div>
-            <div class="chart-bar-wrap">
-                <div style="display:flex; align-items:center; gap:6px;">
-                    <div class="chart-bar-wrap" style="flex:1;">
-                        <div class="chart-bar-fill" style="width:{{ $w }}%"></div>
+        @if($incUbic->isEmpty())
+            <p class="no-data">No se generaron tickets de incidente este mes.</p>
+        @else
+            @foreach($incUbic->take(7) as $loc => $cnt)
+            @php $w = max(5, round($cnt/$maxInc*100)); @endphp
+            <div class="chart-bar-row">
+                <div class="chart-bar-label">{{ $loc }}</div>
+                <div class="chart-bar-wrap">
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <div class="chart-bar-wrap" style="flex:1;">
+                            <div class="chart-bar-fill" style="width:{{ $w }}%"></div>
+                        </div>
+                        <span style="font-size:10px;font-weight:700;color:#333;flex-shrink:0;min-width:16px;">{{ $cnt }}</span>
                     </div>
-                    <span style="font-size:10px;font-weight:700;color:#333;flex-shrink:0;min-width:16px;">{{ $cnt }}</span>
                 </div>
             </div>
-        </div>
-        @endforeach
+            @endforeach
+        @endif
     </div>
 
     {{-- Pie — Clasificación --}}
     <div class="chart-card">
         <h5>Cant. Incidentes por Clasificación de eventos</h5>
-        <div class="pie-wrap">
-            <svg class="pie-svg" viewBox="0 0 160 160" style="width:160px;height:160px;">
-                @foreach($pieSegments as $seg)
-                    @if($seg['pct'] > 0)
-                    @php
-                        $midAngle = ($seg['start'] + $seg['end']) / 2;
-                        // Radio para la etiqueta AFUERA del pie
-                        $labelR = 60;
-                        $lx = round(80 + $labelR * cos(deg2rad($midAngle)), 2);
-                        $ly = round(80 + $labelR * sin(deg2rad($midAngle)) + 4, 2);
-                        // Línea desde el borde del pie hasta la etiqueta
-                        $lineR1 = 46; // borde del pie
-                        $lineR2 = 54; // inicio de la línea
-                        $l1x = round(80 + $lineR1 * cos(deg2rad($midAngle)), 2);
-                        $l1y = round(80 + $lineR1 * sin(deg2rad($midAngle)), 2);
-                        $l2x = round(80 + $lineR2 * cos(deg2rad($midAngle)), 2);
-                        $l2y = round(80 + $lineR2 * sin(deg2rad($midAngle)), 2);
-                    @endphp
-                   {{-- Segmento del pie --}}
-                    @if(count($pieSegments) === 1)
-                        <circle cx="80" cy="80" r="44"
-                            fill="{{ $seg['color'] }}" stroke="white" stroke-width="1.5"/>
-                        <text x="80" y="34"
-                            text-anchor="middle" font-size="10"
-                            fill="{{ $seg['color'] }}" font-weight="bold">
-                            {{ $seg['val'] }}
-                        </text>
-                    @else
-                        <path d="{{ svgArc(80,80,44,$seg['start'],$seg['end']) }}"
-                            fill="{{ $seg['color'] }}" stroke="white" stroke-width="1.5"/>
-                        <line x1="{{ $l1x }}" y1="{{ $l1y }}"
-                            x2="{{ $l2x }}" y2="{{ $l2y }}"
-                            stroke="{{ $seg['color'] }}" stroke-width="1.2"/>
-                        <text x="{{ $lx }}" y="{{ $ly }}"
-                            text-anchor="middle" font-size="10"
-                            fill="{{ $seg['color'] }}" font-weight="bold">
-                            {{ $seg['val'] }}
-                        </text>
-                    @endif
-                    @endif
-                @endforeach
-            </svg>
-            <div class="pie-legend">
-                @foreach($pieSegments as $seg)
-                <div class="pie-legend-item">
-                    <div class="pie-dot" style="background:{{ $seg['color'] }}"></div>
-                    <span>{{ $seg['label'] }}</span>
+        @if($clasif->isEmpty())
+            <p class="no-data">No se generaron tickets de incidente este mes.</p>
+        @else
+            <div class="pie-wrap">
+                <svg class="pie-svg" viewBox="0 0 160 160" style="width:160px;height:160px;">
+                    @foreach($pieSegments as $seg)
+                        @if($seg['pct'] > 0)
+                        @php
+                            $midAngle = ($seg['start'] + $seg['end']) / 2;
+                            $labelR = 60;
+                            $lx = round(80 + $labelR * cos(deg2rad($midAngle)), 2);
+                            $ly = round(80 + $labelR * sin(deg2rad($midAngle)) + 4, 2);
+                            $lineR1 = 46;
+                            $lineR2 = 54;
+                            $l1x = round(80 + $lineR1 * cos(deg2rad($midAngle)), 2);
+                            $l1y = round(80 + $lineR1 * sin(deg2rad($midAngle)), 2);
+                            $l2x = round(80 + $lineR2 * cos(deg2rad($midAngle)), 2);
+                            $l2y = round(80 + $lineR2 * sin(deg2rad($midAngle)), 2);
+                        @endphp
+                        @if(count($pieSegments) === 1)
+                            <circle cx="80" cy="80" r="44"
+                                fill="{{ $seg['color'] }}" stroke="white" stroke-width="1.5"/>
+                            <text x="80" y="34"
+                                text-anchor="middle" font-size="10"
+                                fill="{{ $seg['color'] }}" font-weight="bold">
+                                {{ $seg['val'] }}
+                            </text>
+                        @else
+                            <path d="{{ svgArc(80,80,44,$seg['start'],$seg['end']) }}"
+                                fill="{{ $seg['color'] }}" stroke="white" stroke-width="1.5"/>
+                            <line x1="{{ $l1x }}" y1="{{ $l1y }}"
+                                x2="{{ $l2x }}" y2="{{ $l2y }}"
+                                stroke="{{ $seg['color'] }}" stroke-width="1.2"/>
+                            <text x="{{ $lx }}" y="{{ $ly }}"
+                                text-anchor="middle" font-size="10"
+                                fill="{{ $seg['color'] }}" font-weight="bold">
+                                {{ $seg['val'] }}
+                            </text>
+                        @endif
+                        @endif
+                    @endforeach
+                </svg>
+                <div class="pie-legend">
+                    @foreach($pieSegments as $seg)
+                    <div class="pie-legend-item">
+                        <div class="pie-dot" style="background:{{ $seg['color'] }}"></div>
+                        <span>{{ $seg['label'] }}</span>
+                    </div>
+                    @endforeach
                 </div>
-                @endforeach
             </div>
-        </div>
+        @endif
     </div>
 
-    {{-- Alarma vs Reportado — centrado --}}
+    {{-- Alarma vs Reportado --}}
     <div class="chart-card">
         <h5>Recuento de Incidentes - Alarma vs Reportado<br>Alarma vs Reportado por Semana</h5>
-        <div class="grouped-legend">
-            <div class="legend-item">
-                <div class="legend-dot" style="background:#0f8a8a"></div> Alarma
-            </div>
-            <div class="legend-item">
-                <div class="legend-dot" style="background:#d4520a"></div> Reportado
-            </div>
-        </div>
-        <div class="alarma-chart-wrap" style="min-height:{{ $barMaxH + 20 }}px;">
-            @foreach($semanasKeys as $sem)
-            @php
-                $a  = $alarmaS[$sem]['Alarma']    ?? 0;
-                $r  = $alarmaS[$sem]['Reportado'] ?? 0;
-                $hA = $maxGrupo > 0 ? round($a / $maxGrupo * $barMaxH) : 0;
-                $hR = $maxGrupo > 0 ? round($r / $maxGrupo * $barMaxH) : 0;
-            @endphp
-            <div class="alarma-group">
-                {{-- Valores encima --}}
-                <div style="display:flex;gap:3px;margin-bottom:2px;">
-                    <span style="width:16px;text-align:center;font-size:8px;color:#0f8a8a;font-weight:700;">{{ $a > 0 ? $a : '' }}</span>
-                    <span style="width:16px;text-align:center;font-size:8px;color:#d4520a;font-weight:700;">{{ $r > 0 ? $r : '' }}</span>
+        @if($semanasKeys->isEmpty())
+            <p class="no-data">No se generaron tickets de incidente este mes.</p>
+        @else
+            <div class="grouped-legend">
+                <div class="legend-item">
+                    <div class="legend-dot" style="background:#0f8a8a"></div> Alarma
                 </div>
-                {{-- Barras --}}
-                <div class="alarma-bars" style="height:{{ $barMaxH }}px;align-items:flex-end;">
-                    <div style="width:16px;height:{{ max(2,$hA) }}px;background:#0f8a8a;border-radius:3px 3px 0 0;"></div>
-                    <div style="width:16px;height:{{ max(2,$hR) }}px;background:#d4520a;border-radius:3px 3px 0 0;"></div>
+                <div class="legend-item">
+                    <div class="legend-dot" style="background:#d4520a"></div> Reportado
                 </div>
-                {{-- Semana --}}
-                <div class="alarma-label">{{ $sem }}</div>
             </div>
-            @endforeach
-        </div>
-        <div style="font-size:8px;text-align:center;color:#aaa;margin-top:4px;">0</div>
+            <div class="alarma-chart-wrap" style="min-height:{{ $barMaxH + 20 }}px;">
+                @foreach($semanasKeys as $sem)
+                @php
+                    $a  = $alarmaS[$sem]['Alarma']    ?? 0;
+                    $r  = $alarmaS[$sem]['Reportado'] ?? 0;
+                    $hA = $maxGrupo > 0 ? round($a / $maxGrupo * $barMaxH) : 0;
+                    $hR = $maxGrupo > 0 ? round($r / $maxGrupo * $barMaxH) : 0;
+                @endphp
+                <div class="alarma-group">
+                    <div style="display:flex;gap:3px;margin-bottom:2px;">
+                        <span style="width:16px;text-align:center;font-size:8px;color:#0f8a8a;font-weight:700;">{{ $a > 0 ? $a : '' }}</span>
+                        <span style="width:16px;text-align:center;font-size:8px;color:#d4520a;font-weight:700;">{{ $r > 0 ? $r : '' }}</span>
+                    </div>
+                    <div class="alarma-bars" style="height:{{ $barMaxH }}px;align-items:flex-end;">
+                        <div style="width:16px;height:{{ max(2,$hA) }}px;background:#0f8a8a;border-radius:3px 3px 0 0;"></div>
+                        <div style="width:16px;height:{{ max(2,$hR) }}px;background:#d4520a;border-radius:3px 3px 0 0;"></div>
+                    </div>
+                    <div class="alarma-label">{{ $sem }}</div>
+                </div>
+                @endforeach
+            </div>
+            <div style="font-size:8px;text-align:center;color:#aaa;margin-top:4px;">0</div>
+        @endif
     </div>
 
 </div>
@@ -337,7 +361,7 @@ $semanasKeys = collect($alarmaS)->keys()->sort()->values();
     @if($ovnicomLogo)
         <img src="{{ $ovnicomLogo }}" style="max-height:45px;max-width:120px;object-fit:contain;" alt="OVNICOM">
     @else
-        <div style="font-size:22px;font-weight:900;letter-spacing:1px;opacity:.95">🔷VNCOM</div>
+        <div style="font-size:22px;font-weight:900;letter-spacing:1px;opacity:.95">🔷VNICOM</div>
     @endif
 </div>
 
@@ -345,28 +369,34 @@ $semanasKeys = collect($alarmaS)->keys()->sort()->values();
     <div style="font-size:15px;font-weight:800;color:#1a1a2e;margin-bottom:14px;text-transform:uppercase;letter-spacing:.5px;">
         Detalle de Tickets
     </div>
-    <table class="detail-table">
-        <thead>
-            <tr>
-                <th style="width:70px">Ticket</th>
-                <th style="width:80px">Tipo de Ticket</th>
-                <th>Descripción Corta</th>
-                <th>Causa de Daño</th>
-                <th>Solución</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach($stats['detalle_tickets'] as $t)
-            <tr>
-                <td style="font-weight:700;font-family:monospace">{{ $t['ticket'] }}</td>
-                <td><span class="badge {{ $t['tipo'] === 'Incidente' ? 'badge-inc' : 'badge-sol' }}">{{ $t['tipo'] }}</span></td>
-                <td>{{ $t['descripcion'] }}</td>
-                <td>{{ $t['causa'] }}</td>
-                <td>{{ $t['solucion'] }}</td>
-            </tr>
-            @endforeach
-        </tbody>
-    </table>
+    @if(empty($stats['detalle_tickets']))
+        <p style="font-size:11px;color:#d4520a;font-style:italic;text-align:center;padding:20px 0;">
+            No se generaron tickets este mes.
+        </p>
+    @else
+        <table class="detail-table">
+            <thead>
+                <tr>
+                    <th style="width:70px">Ticket</th>
+                    <th style="width:80px">Tipo de Ticket</th>
+                    <th>Descripción Corta</th>
+                    <th>Causa de Daño</th>
+                    <th>Solución</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach($stats['detalle_tickets'] as $t)
+                <tr>
+                    <td style="font-weight:700;font-family:monospace">{{ $t['ticket'] }}</td>
+                    <td><span class="badge {{ $t['tipo'] === 'Incidente' ? 'badge-inc' : 'badge-sol' }}">{{ $t['tipo'] }}</span></td>
+                    <td>{{ $t['descripcion'] }}</td>
+                    <td>{{ $t['causa'] }}</td>
+                    <td>{{ $t['solucion'] }}</td>
+                </tr>
+                @endforeach
+            </tbody>
+        </table>
+    @endif
 </div>
 
 </body>
