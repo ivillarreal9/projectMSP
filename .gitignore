@@ -25,3 +25,63 @@ Homestead.json
 Homestead.yaml
 Thumbs.db
 .claude
+# === SECRETOS ADICIONALES ===
+.env.local
+.env.*.local
+.env.testing
+*.pem
+*.key
+!public.key
+*.cer
+*.crt
+*.p12
+*.pfx
+credentials.json
+secrets/
+serviceAccount*.json
+oauth-tokens.json
+
+# === ARCHIVOS TEMPORALES DE OFFICE/SHAREPOINT ===
+# Esto es CRÍTICO para tu módulo de importar Excel
+~$*
+.~lock.*
+*.tmp
+*.bak
+*.orig
+
+# === STORAGE DE LARAVEL (faltantes) ===
+/storage/app/public/
+/storage/app/uploads/
+/storage/app/imports/
+/storage/app/exports/
+/storage/framework/cache/
+/storage/framework/sessions/
+/storage/framework/views/
+/storage/framework/testing/
+/storage/logs/
+/bootstrap/cache/*.php
+!/bootstrap/cache/.gitignore
+
+# === LOGS ADICIONALES ===
+npm-debug.log*
+yarn-error.log*
+
+# === BASES DE DATOS LOCALES ===
+*.sqlite
+*.sqlite-journal
+database/database.sqlite
+
+# === DOCKER ===
+docker-compose.override.yml
+
+# === SISTEMA OPERATIVO (faltantes) ===
+._*
+$RECYCLE.BIN/
+ehthumbs.db
+Desktop.ini
+
+# === CACHÉS DE HERRAMIENTAS ===
+.php-cs-fixer.cache
+.phpstan.cache
+.rector.cache
+.eslintcache
