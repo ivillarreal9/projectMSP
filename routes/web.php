@@ -12,6 +12,7 @@ use App\Http\Controllers\Admin\Sales\SalesClientsController;
 use App\Http\Controllers\Admin\Sales\SalesExecutivesController;
 use App\Http\Controllers\Admin\Sales\SalesReassignController;
 use App\Http\Controllers\Admin\MspReportController;
+use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\MspPlantillaController;
 use App\Http\Controllers\Admin\ClientMergeController;
 use App\Http\Controllers\Admin\SurveyTypeController;
@@ -83,7 +84,15 @@ Route::middleware(['auth', 'role:admin'])
             Route::post('/plantillas',        [MspPlantillaController::class, 'store'])->name('plantillas.store');
             Route::delete('/plantillas/{plantilla}', [MspPlantillaController::class, 'destroy'])->name('plantillas.destroy');
             Route::post('/plantillas/{plantilla}', [MspPlantillaController::class, 'update'])->name('plantillas.update');
+
+
         });
+        
+        // Roles
+        Route::get('/roles', [RoleController::class, 'index'])->name('roles.index');
+        Route::post('/roles', [RoleController::class, 'store'])->name('roles.store');
+        Route::put('/roles/{role}', [RoleController::class, 'update'])->name('roles.update');
+        Route::delete('/roles/{role}', [RoleController::class, 'destroy'])->name('roles.destroy');
 
         // ── Encuestas ─────────────────────────────────────────────────────────
         Route::get('surveys',                           [SurveyTypeController::class, 'index'])->name('surveys.index');

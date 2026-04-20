@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -12,44 +11,42 @@ use Laravel\Sanctum\HasApiTokens;
 class User extends Authenticatable
 {
     use HasApiTokens, HasFactory, Notifiable;
-    /** @use HasFactory<UserFactory> */
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var list<string>
-     */
+
     protected $fillable = [
         'name',
         'email',
         'password',
-        'role',
+        'role',      // campo string legacy (para el middleware role:admin,editor,etc)
+        'role_id',   // FK al nuevo sistema dinámico
     ];
 
-    /**
-     * The attributes that should be hidden for serialization.
-     *
-     * @var list<string>
-     */
     protected $hidden = [
         'password',
         'remember_token',
     ];
 
-    /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
     protected function casts(): array
     {
         return [
             'email_verified_at' => 'datetime',
-            'password' => 'hashed',
+            'password'          => 'hashed',
         ];
     }
-    // En $fillable ya está 'role', solo actualiza el método hasRole
-    // y agrega isVentas()
 
+    // ── Relación con rol dinámico ─────────────────────────────────────────
+    public function roleModel(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Role::class, 'role_id');
+    }
+
+    // ── Verificar acceso a módulo dinámico ───────────────────────────────
+    public function canAccessModule(string $slug): bool
+    {
+        if ($this->isAdmin()) return true;
+        return $this->roleModel?->hasModule($slug) ?? false;
+    }
+
+    // ── Métodos de rol estáticos (compatibilidad con middleware existente) ─
     public function isAdmin(): bool
     {
         return $this->role === 'admin';
@@ -70,4 +67,12 @@ class User extends Authenticatable
         return $this->role === $role;
     }
 
+    // ── Módulos accesibles según rol dinámico ────────────────────────────
+    public function modulosAccesibles(): array
+    {
+        if ($this->isAdmin()) {
+            return ['msp_reports', 'api_msp', 'meta2', 'encuestas', 'usuarios', 'sales'];
+        }
+        return $this->roleModel?->modulos ?? [];
+    }
 }

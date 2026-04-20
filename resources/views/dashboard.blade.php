@@ -15,8 +15,8 @@
 
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
 
-                {{-- Reportes Masivos (solo admin) --}}
-                @if(auth()->user()->isAdmin())
+                {{-- Reportes Masivos --}}
+                @if(auth()->user()->canAccessModule('msp_reports'))
                 <a href="{{ route('admin.msp.index') }}"
                    class="group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 hover:border-orange-400 dark:hover:border-orange-500 hover:shadow-md transition-all duration-200">
                     <div class="flex items-start justify-between mb-4">
@@ -38,8 +38,8 @@
                 </a>
                 @endif
 
-                {{-- Usuarios (solo admin) --}}
-                @if(auth()->user()->isAdmin())
+                {{-- Usuarios --}}
+                @if(auth()->user()->canAccessModule('usuarios'))
                 <a href="{{ route('admin.users.index') }}"
                    class="group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 hover:border-indigo-400 dark:hover:border-indigo-500 hover:shadow-md transition-all duration-200">
                     <div class="flex items-start justify-between mb-4">
@@ -61,8 +61,8 @@
                 </a>
                 @endif
 
-                {{-- API MSP (admin y editor) --}}
-                @if(auth()->user()->isAdmin() || auth()->user()->isEditor())
+                {{-- API MSP --}}
+                @if(auth()->user()->canAccessModule('api_msp'))
                 <a href="{{ route('admin.api-msp.index') }}"
                    class="group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 hover:border-purple-400 dark:hover:border-purple-500 hover:shadow-md transition-all duration-200">
                     <div class="flex items-start justify-between mb-4">
@@ -84,11 +84,8 @@
                 </a>
                 @endif
 
-                {{-- Encuesta de Satisfacción (solo admin) --}}
-
-
-                {{-- META 2 (solo admin) --}}
-                @if(auth()->user()->isAdmin())
+                {{-- META 2 --}}
+                @if(auth()->user()->canAccessModule('meta2'))
                 <a href="{{ route('admin.meta-2.index') }}"
                    class="group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 hover:border-emerald-400 dark:hover:border-emerald-500 hover:shadow-md transition-all duration-200">
                     <div class="flex items-start justify-between mb-4">
@@ -110,10 +107,10 @@
                 </a>
                 @endif
 
-                {{-- Encuesta de Satisfacción (solo admin) --}}
-                @if(auth()->user()->isAdmin())
+                {{-- Encuestas --}}
+                @if(auth()->user()->canAccessModule('encuestas'))
                 <a href="{{ route('admin.surveys.index') }}"
-                class="group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 hover:border-violet-400 dark:hover:border-violet-500 hover:shadow-md transition-all duration-200">
+                   class="group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 hover:border-violet-400 dark:hover:border-violet-500 hover:shadow-md transition-all duration-200">
                     <div class="flex items-start justify-between mb-4">
                         <div class="w-10 h-10 bg-violet-50 dark:bg-violet-900/30 rounded-lg flex items-center justify-center group-hover:bg-violet-100 dark:group-hover:bg-violet-900/50 transition">
                             <svg class="w-5 h-5 text-violet-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -133,22 +130,39 @@
                 </a>
                 @endif
 
-                @if(auth()->user()->isVentas())
+                {{-- Sales --}}
+                @if(auth()->user()->canAccessModule('sales'))
                 <a href="{{ route('admin.sales.index') }}"
-                class="group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 hover:border-purple-400 dark:hover:border-purple-500 hover:shadow-md transition-all duration-200">
-
+                   class="group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 hover:border-purple-400 dark:hover:border-purple-500 hover:shadow-md transition-all duration-200">
                     <div class="flex items-start justify-between mb-4">
-                        <div class="w-10 h-10 bg-purple-50 dark:bg-purple-900/30 rounded-lg flex items-center justify-center">
+                        <div class="w-10 h-10 bg-purple-50 dark:bg-purple-900/30 rounded-lg flex items-center justify-center group-hover:bg-purple-100 dark:group-hover:bg-purple-900/50 transition">
                             <svg class="w-5 h-5 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                     d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2"/>
                             </svg>
                         </div>
+                        <svg class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-purple-400 transition" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                        </svg>
                     </div>
-
-                    <h3 class="text-sm font-semibold">Dashboard de Ventas</h3>
-                    <p class="text-xs text-gray-400">Seguimiento comercial Odoo</p>
+                    <h3 class="text-sm font-semibold text-gray-800 dark:text-gray-200 group-hover:text-purple-600 dark:group-hover:text-purple-400 transition">
+                        Dashboard de Ventas
+                    </h3>
+                    <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                        Seguimiento comercial Odoo
+                    </p>
                 </a>
+                @endif
+
+                {{-- Mensaje si no tiene módulos --}}
+                @if(count(auth()->user()->modulosAccesibles()) === 0)
+                <div class="col-span-full flex flex-col items-center justify-center py-16 text-center text-gray-400 dark:text-gray-500">
+                    <svg class="w-12 h-12 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <p class="text-sm font-medium">No tienes módulos asignados</p>
+                    <p class="text-xs mt-1">Contacta al administrador para que te asigne un rol.</p>
+                </div>
                 @endif
 
             </div>

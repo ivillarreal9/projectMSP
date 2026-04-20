@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+
+  # ─── Aplicación Laravel (PHP + Nginx + Queue) ───
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        user: www
+        uid: 1000
+    image: projectmsp
+    container_name: projectmsp_app
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      - APP_ENV=${APP_ENV:-production}
+    volumes:
+      - .:/var/www
+      - /var/www/vendor
+      - /var/www/node_modules
+      - /var/www/public/build
+    networks:
+      - projectmsp
+    depends_on:
+      - db
+
+  # ─── Base de datos MySQL ───
+  db:
+    image: mysql:8.0
+    container_name: projectmsp_db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-projectmsp}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-secret}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-secret}
+      MYSQL_USER: ${DB_USERNAME:-projectmsp}
+    volumes:
+      - dbdata:/var/lib/mysql
+    ports:
+      - "3307:3306"
+    networks:
+      - projectmsp
+
+  # ─── Redis (caché y colas, opcional) ───
+  redis:
+    image: redis:7-alpine
+    container_name: projectmsp_redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    networks:
+      - projectmsp
+
+networks:
+  projectmsp:
+    driver: bridge
+
+volumes:
+  dbdata:
+    driver: local
