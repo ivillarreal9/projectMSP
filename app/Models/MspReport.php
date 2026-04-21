@@ -45,34 +45,44 @@ class MspReport extends Model
 
         $tickets = $q->orderByRaw("FIELD(tipo_ticket, 'Incidente', 'Solicitud')")->get();
 
-        $incidentes = $tickets->where('tipo_ticket', 'Incidente');
+        $incidentes  = $tickets->where('tipo_ticket', 'Incidente');
         $solicitudes = $tickets->where('tipo_ticket', 'Solicitud');
 
+        // Normalizador: baja a minúsculas + trim para agrupar, luego capitaliza para mostrar
+        $normalize = fn($v) => $v ? ucfirst(preg_replace('/\s+/', ' ', trim(mb_strtolower((string) $v)))) : 'Sin clasificar';
+
         return [
-            'total_tickets'       => $tickets->count(),
-            'cant_incidentes'     => $incidentes->count(),
-            'cant_solicitudes'    => $solicitudes->count(),
-            'tiempo_prom_incidentes' => $incidentes->avg('tiempo_vida_ticket') ?? 0,
+            'total_tickets'           => $tickets->count(),
+            'cant_incidentes'         => $incidentes->count(),
+            'cant_solicitudes'        => $solicitudes->count(),
+            'tiempo_prom_incidentes'  => $incidentes->avg('tiempo_vida_ticket') ?? 0,
             'tiempo_prom_solicitudes' => $solicitudes->avg('tiempo_vida_ticket') ?? 0,
-            'por_ubicacion_solicitudes' => $solicitudes->groupBy('location_name')
+
+            'por_ubicacion_solicitudes' => $solicitudes->groupBy(fn($t) => $normalize($t->location_name))
                 ->map(fn($g) => $g->count())->sortDesc(),
-            'por_ubicacion_incidentes'  => $incidentes->groupBy('location_name')
+
+            'por_ubicacion_incidentes' => $incidentes->groupBy(fn($t) => $normalize($t->location_name))
                 ->map(fn($g) => $g->count())->sortDesc(),
-            'por_clasificacion'   => $incidentes->groupBy('clasificacion_eventos')
+
+            // 🎯 FIX principal: agrupa por valor normalizado para unir mayús/minús
+            'por_clasificacion' => $incidentes->groupBy(fn($t) => $normalize($t->clasificacion_eventos))
                 ->map(fn($g) => $g->count()),
-            'alarma_vs_reportado' => $tickets->groupBy('tipo_reporte')
+
+            'alarma_vs_reportado' => $tickets->groupBy(fn($t) => $normalize($t->tipo_reporte))
                 ->map(fn($g) => $g->count()),
+
             'alarma_vs_reportado_semana' => $tickets->groupBy('semana')
                 ->map(fn($g) => [
-                    'Alarma'    => $g->where('tipo_reporte', 'Alarma')->count(),
-                    'Reportado' => $g->where('tipo_reporte', 'Reportado')->count(),
+                    'Alarma'    => $g->filter(fn($t) => $normalize($t->tipo_reporte) === 'Alarma')->count(),
+                    'Reportado' => $g->filter(fn($t) => $normalize($t->tipo_reporte) === 'Reportado')->count(),
                 ]),
+
             'detalle_tickets' => $tickets->map(fn($t) => [
-                'ticket'       => $t->ticket_number,
-                'tipo'         => $t->tipo_ticket,
-                'descripcion'  => $t->ticket_title,
-                'causa'        => $t->causa_dano,
-                'solucion'     => $t->solucion,
+                'ticket'      => $t->ticket_number,
+                'tipo'        => $t->tipo_ticket,
+                'descripcion' => $t->ticket_title,
+                'causa'       => $t->causa_dano,
+                'solucion'    => $t->solucion,
             ])->values(),
         ];
     }

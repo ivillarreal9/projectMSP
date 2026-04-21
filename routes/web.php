@@ -76,9 +76,6 @@ Route::middleware(['auth', 'role:admin'])
             Route::get('/chat',      [MspReportController::class, 'chat'])->name('chat');
             Route::post('/chat/api', [MspReportController::class, 'chatApi'])->name('chat.api');
 
-            // Configuración
-            Route::post('/settings', [MspReportController::class, 'saveSettings'])->name('settings.save');
-
             // Plantillas
             Route::get('/plantillas',         [MspPlantillaController::class, 'index'])->name('plantillas.index');
             Route::post('/plantillas',        [MspPlantillaController::class, 'store'])->name('plantillas.store');

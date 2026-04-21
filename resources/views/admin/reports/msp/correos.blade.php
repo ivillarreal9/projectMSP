@@ -2,6 +2,8 @@
 @extends('admin.reports.msp.layouts.app')
 @section('title', 'Envío de Correos')
 
+@php $vars = ['[[cliente]]','[[periodo]]','[[incidentes]]','[[solicitudes]]','[[t_inc]]','[[t_sol]]','[[cuenta]]']; @endphp
+
 @section('content')
 <div class="space-y-6 fade-in">
 
@@ -13,6 +15,18 @@
     @if(session('error'))
     <div class="flex items-center gap-3 p-4 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 text-red-700 dark:text-red-300 rounded-xl text-sm">
         <i class="fa-solid fa-circle-xmark"></i> {{ session('error') }}
+    </div>
+    @endif
+
+    {{-- Mostrar errores de validación --}}
+    @if($errors->any())
+    <div class="p-4 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 text-red-700 dark:text-red-300 rounded-xl text-sm">
+        <div class="font-semibold mb-2"><i class="fa-solid fa-circle-exclamation"></i> Errores de validación:</div>
+        <ul class="list-disc list-inside">
+            @foreach($errors->all() as $error)
+                <li>{{ $error }}</li>
+            @endforeach
+        </ul>
     </div>
     @endif
 
@@ -78,7 +92,6 @@
 
                 {{-- Columna izquierda: lista clientes --}}
                 <div class="col-span-2 flex flex-col">
-                    {{-- Buscador --}}
                     <div class="p-3 border-b dark:border-gray-700">
                         <div class="relative">
                             <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
@@ -90,7 +103,6 @@
                         </div>
                     </div>
 
-                    {{-- Lista fija --}}
                     <div class="overflow-y-auto flex-1" id="listaIndividual" style="max-height:440px">
                         @foreach($clientes as $cliente)
                         <div class="cliente-item-individual flex items-center gap-3 px-4 py-3
@@ -119,7 +131,6 @@
 
                 {{-- Columna derecha: formulario --}}
                 <div class="col-span-3 flex flex-col">
-                    {{-- Estado vacío --}}
                     <div id="individual-empty" class="flex-1 flex flex-col items-center justify-center p-8 text-center text-gray-400">
                         <div class="w-16 h-16 rounded-2xl flex items-center justify-center mb-4 bg-orange-50 dark:bg-orange-900/20">
                             <i class="fa-solid fa-arrow-left text-2xl" style="color:var(--ovni-orange)"></i>
@@ -128,9 +139,7 @@
                         <p class="text-xs mt-1">para comenzar el envío</p>
                     </div>
 
-                    {{-- Formulario (oculto hasta seleccionar) --}}
                     <div id="individual-form" class="hidden flex-1 flex flex-col">
-                        {{-- Header cliente seleccionado --}}
                         <div class="px-5 py-3 border-b dark:border-gray-700 flex items-center gap-3" style="background:#fff7f0">
                             <div id="ind-avatar" class="w-9 h-9 rounded-xl flex items-center justify-center text-white text-sm font-bold flex-shrink-0"
                                  style="background:var(--ovni-orange)">--</div>
@@ -193,7 +202,6 @@
                                     <div>
                                         <label class="text-xs font-semibold text-gray-500 uppercase mb-1 block">Insertar variable</label>
                                         <div class="flex flex-wrap gap-1">
-                                            @php $vars = ['[[cliente]]','[[periodo]]','[[incidentes]]','[[solicitudes]]','[[t_inc]]','[[t_sol]]','[[cuenta]]']; @endphp
                                             @foreach($vars as $var)
                                             <button type="button" onclick="insertarVariable('mensaje_individual', '{{ $var }}')"
                                                     class="text-xs px-2 py-1 bg-orange-50 dark:bg-orange-900/20 text-orange-600
@@ -212,10 +220,10 @@
                                     </div>
 
                                     <div class="flex gap-3 pt-1">
-                                        <button type="submit"
+                                        <button type="submit" id="btnSubmitIndividual"
                                                 class="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-white text-sm font-semibold hover:opacity-90 transition"
                                                 style="background:var(--ovni-orange)">
-                                            <i class="fa-solid fa-paper-plane"></i> Enviar con PDF
+                                            <i class="fa-solid fa-paper-plane"></i> <span id="btnSubmitIndividualText">Enviar con PDF</span>
                                         </button>
                                         <a href="#" id="btn-ver-pdf-individual" target="_blank"
                                            class="flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-medium
@@ -252,7 +260,6 @@
 
                     {{-- Columna izquierda: lista con checkboxes --}}
                     <div class="col-span-2 flex flex-col">
-                        {{-- Buscador + toggle todos --}}
                         <div class="p-3 border-b dark:border-gray-700">
                             <div class="relative mb-2">
                                 <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
@@ -268,20 +275,26 @@
                             </label>
                         </div>
 
-                        {{-- Lista fija con checkboxes --}}
+                        {{-- Lista con checkboxes — FIX: hidden del email SOLO si hay email --}}
                         <div class="overflow-y-auto flex-1" id="listaMasivo" style="max-height:440px">
                             @foreach($clientes as $cliente)
                             <label class="cliente-item-masivo flex items-center gap-3 px-4 py-3
-                                          hover:bg-blue-50 dark:hover:bg-gray-700 cursor-pointer
+                                          hover:bg-blue-50 dark:hover:bg-gray-700 {{ $cliente->email_cliente ? 'cursor-pointer' : 'cursor-not-allowed opacity-60' }}
                                           border-b dark:border-gray-700/50 transition"
-                                   data-name="{{ strtolower($cliente->customer_name) }}">
-                                <input type="checkbox"
-                                       name="clientes[{{ $loop->index }}][customer_name]"
-                                       value="{{ $cliente->customer_name }}"
-                                       @if(!$cliente->email_cliente) disabled @endif
-                                       onchange="updateMasivoCount()"
-                                       class="cliente-check-masivo accent-blue-600 w-4 h-4 flex-shrink-0 rounded">
-                                <input type="hidden" name="clientes[{{ $loop->index }}][email]" value="{{ $cliente->email_cliente }}">
+                                   data-name="{{ strtolower($cliente->customer_name) }}"
+                                   data-has-email="{{ $cliente->email_cliente ? '1' : '0' }}">
+
+                                @if($cliente->email_cliente)
+                                    <input type="checkbox"
+                                           data-customer="{{ $cliente->customer_name }}"
+                                           data-email="{{ $cliente->email_cliente }}"
+                                           onchange="updateMasivoCount()"
+                                           class="cliente-check-masivo accent-blue-600 w-4 h-4 flex-shrink-0 rounded">
+                                @else
+                                    <input type="checkbox" disabled
+                                           class="cliente-check-masivo accent-blue-600 w-4 h-4 flex-shrink-0 rounded">
+                                @endif
+
                                 <div class="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold flex-shrink-0
                                             {{ $cliente->email_cliente ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600' }}">
                                     {{ strtoupper(substr($cliente->customer_name, 0, 2)) }}
@@ -301,7 +314,6 @@
                             </div>
                         </div>
 
-                        {{-- Footer contador --}}
                         <div class="p-3 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50">
                             <span class="text-xs text-gray-500" id="count-masivo-bottom">0 clientes seleccionados</span>
                         </div>
@@ -309,8 +321,6 @@
 
                     {{-- Columna derecha: formulario masivo --}}
                     <div class="col-span-3 p-5 flex flex-col gap-4 overflow-y-auto">
-
-                        {{-- Info selección --}}
                         <div id="masivo-info-empty" class="flex items-center gap-3 p-3 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700">
                             <i class="fa-solid fa-circle-info text-blue-500 flex-shrink-0"></i>
                             <p class="text-xs text-blue-700 dark:text-blue-300">
@@ -351,8 +361,7 @@
                         <div>
                             <label class="text-xs font-semibold text-gray-500 uppercase mb-1 block">Insertar variable</label>
                             <div class="flex flex-wrap gap-1">
-                                @php $vars2 = ['[[cliente]]','[[periodo]]','[[incidentes]]','[[solicitudes]]','[[t_inc]]','[[t_sol]]','[[cuenta]]']; @endphp
-                                @foreach($vars2 as $var)
+                                @foreach($vars as $var)
                                 <button type="button" onclick="insertarVariable('mensaje_masivo', '{{ $var }}')"
                                         class="text-xs px-2 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600
                                                border border-blue-200 dark:border-blue-700 rounded-lg hover:bg-blue-100 transition font-mono">
@@ -371,10 +380,13 @@
                             <p class="text-xs text-gray-400 mt-1">Las variables <span class="font-mono">[[cliente]]</span>, <span class="font-mono">[[periodo]]</span>, etc. se reemplazan por cada cliente.</p>
                         </div>
 
-                        <button type="submit"
-                                class="flex items-center justify-center gap-2 py-3 rounded-xl text-white text-sm font-semibold bg-blue-600 hover:bg-blue-700 transition mt-auto">
-                            <i class="fa-solid fa-paper-plane"></i>
-                            Enviar a <span id="btn-count-masivo" class="font-bold">0</span> clientes seleccionados
+                        {{-- Contenedor donde el JS va a INYECTAR los inputs hidden justo antes del submit --}}
+                        <div id="clientes-hidden-container"></div>
+
+                        <button type="submit" id="btnSubmitMasivo" disabled
+                                class="flex items-center justify-center gap-2 py-3 rounded-xl text-white text-sm font-semibold bg-blue-600 hover:bg-blue-700 transition mt-auto disabled:opacity-50 disabled:cursor-not-allowed">
+                            <i class="fa-solid fa-paper-plane" id="btnSubmitMasivoIcon"></i>
+                            <span id="btnSubmitMasivoText">Selecciona al menos un cliente</span>
                         </button>
                     </div>
                 </div>
@@ -472,8 +484,7 @@
                         <div>
                             <label class="text-xs font-semibold text-gray-500 uppercase mb-1 block">Insertar variable</label>
                             <div class="flex flex-wrap gap-1">
-                                @php $vars3 = ['[[cliente]]','[[periodo]]','[[incidentes]]','[[solicitudes]]','[[t_inc]]','[[t_sol]]','[[cuenta]]']; @endphp
-                                @foreach($vars3 as $var)
+                                @foreach($vars as $var)
                                 <button type="button" onclick="insertarVariable('plantilla_mensaje', '{{ $var }}')"
                                         class="text-xs px-2 py-1 bg-orange-50 dark:bg-orange-900/20 text-orange-600
                                                border border-orange-200 dark:border-orange-700 rounded-lg hover:bg-orange-100 transition font-mono">
@@ -556,7 +567,6 @@
         document.getElementById('ind-avatar').textContent    = initials;
         document.getElementById('ind-nombre').textContent    = name;
         document.getElementById('ind-email').textContent     = email || 'Sin email';
-        // Highlight fila seleccionada
         document.querySelectorAll('.cliente-item-individual').forEach(el => {
             el.classList.toggle('bg-orange-50', el.dataset.name === name.toLowerCase());
             el.classList.toggle('dark:bg-orange-900/20', el.dataset.name === name.toLowerCase());
@@ -572,6 +582,14 @@
             el.classList.remove('bg-orange-50', 'dark:bg-orange-900/20');
         });
     };
+
+    // ── Submit individual con spinner ─────────────────────────────────────
+    document.getElementById('formIndividual').addEventListener('submit', function(e) {
+        const btn  = document.getElementById('btnSubmitIndividual');
+        const txt  = document.getElementById('btnSubmitIndividualText');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Enviando correo...';
+    });
 
     // ── Masivo ────────────────────────────────────────────────────────────
     window.filterMasivo = function(q) {
@@ -589,12 +607,23 @@
         const checked = document.querySelectorAll('.cliente-check-masivo:checked').length;
         const badge   = document.getElementById('badge-masivo');
         const bottom  = document.getElementById('count-masivo-bottom');
-        const btnCount= document.getElementById('btn-count-masivo');
-        if (badge)    badge.textContent    = checked + ' seleccionados';
-        if (bottom)   bottom.textContent   = checked + ' clientes seleccionados';
-        if (btnCount) btnCount.textContent = checked;
+        const btn     = document.getElementById('btnSubmitMasivo');
+        const btnTxt  = document.getElementById('btnSubmitMasivoText');
+
+        if (badge)  badge.textContent  = checked + ' seleccionados';
+        if (bottom) bottom.textContent = checked + ' clientes seleccionados';
+
+        // Habilitar/deshabilitar botón de envío
+        if (checked === 0) {
+            btn.disabled = true;
+            btnTxt.textContent = 'Selecciona al menos un cliente';
+        } else {
+            btn.disabled = false;
+            btnTxt.textContent = `Enviar a ${checked} cliente${checked > 1 ? 's' : ''}`;
+        }
+
         const total = document.querySelectorAll('.cliente-check-masivo:not(:disabled)').length;
-        const chk = document.getElementById('checkTodos');
+        const chk   = document.getElementById('checkTodos');
         if (chk) chk.checked = checked === total && total > 0;
     };
 
@@ -602,6 +631,46 @@
         document.querySelectorAll('.cliente-check-masivo:not(:disabled)').forEach(c => c.checked = checkbox.checked);
         window.updateMasivoCount();
     };
+
+    // ── Submit masivo: construir inputs hidden ANTES de enviar ──────────
+    document.getElementById('formMasivo').addEventListener('submit', function(e) {
+        const checked = document.querySelectorAll('.cliente-check-masivo:checked');
+
+        if (checked.length === 0) {
+            e.preventDefault();
+            alert('Selecciona al menos un cliente antes de enviar.');
+            return;
+        }
+
+        // Limpiar inputs previos
+        const container = document.getElementById('clientes-hidden-container');
+        container.innerHTML = '';
+
+        // Crear un par de hidden inputs (customer_name + email) por cada cliente marcado
+        checked.forEach((cb, index) => {
+            const customerInput = document.createElement('input');
+            customerInput.type  = 'hidden';
+            customerInput.name  = `clientes[${index}][customer_name]`;
+            customerInput.value = cb.dataset.customer;
+            container.appendChild(customerInput);
+
+            const emailInput = document.createElement('input');
+            emailInput.type  = 'hidden';
+            emailInput.name  = `clientes[${index}][email]`;
+            emailInput.value = cb.dataset.email;
+            container.appendChild(emailInput);
+        });
+
+        console.log(`[Envío masivo] Enviando ${checked.length} clientes`);
+
+        // Spinner y deshabilitar botón
+        const btn     = document.getElementById('btnSubmitMasivo');
+        const btnTxt  = document.getElementById('btnSubmitMasivoText');
+        const btnIcon = document.getElementById('btnSubmitMasivoIcon');
+        btn.disabled = true;
+        btnIcon.className = 'fa-solid fa-spinner fa-spin';
+        btnTxt.textContent = `Enviando a ${checked.length} cliente${checked.length > 1 ? 's' : ''}...`;
+    });
 
     // ── Plantillas ────────────────────────────────────────────────────────
     window.aplicarPlantillaSeleccionada = function(value, panel) {
@@ -815,7 +884,9 @@
         window.closeModalPlantillas();
     };
 
+    // Inicialización
     window.switchTab('individual');
+    window.updateMasivoCount();
     cargarPlantillas();
 })();
 </script>

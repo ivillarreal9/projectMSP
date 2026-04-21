@@ -11,21 +11,27 @@
             <h2 class="text-xl font-bold text-gray-800 dark:text-white">Reportes Masivos</h2>
             <p class="text-sm text-gray-500 mt-0.5">Importa archivos Excel desde SharePoint para generar reportes</p>
         </div>
-        <button onclick="openCredentialsModal()"
-                class="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition">
-            <i class="fa-solid fa-gear"></i> Credenciales
-        </button>
     </div>
 
-    {{-- Aviso si no hay credenciales --}}
+    {{-- Aviso si faltan credenciales en .env --}}
     @if(!$hasCredentials)
     <div class="bg-amber-50 border border-amber-200 rounded-2xl p-5 flex items-start gap-3">
         <i class="fa-solid fa-triangle-exclamation text-amber-500 mt-0.5"></i>
-        <div>
-            <div class="font-semibold text-amber-800">Credenciales no configuradas</div>
+        <div class="flex-1">
+            <div class="font-semibold text-amber-800">Credenciales faltantes en .env</div>
             <div class="text-sm text-amber-700 mt-1">
-                Configura las credenciales de SharePoint y SendGrid para comenzar.
-                <button onclick="openCredentialsModal()" class="underline font-medium">Configurar ahora</button>
+                Añade estas variables al archivo <code class="bg-amber-100 px-1 rounded">.env</code> y reinicia el contenedor:
+            </div>
+            @if(!empty($missingEnvVars))
+            <ul class="mt-2 text-sm text-amber-700 list-disc list-inside space-y-0.5">
+                @foreach($missingEnvVars as $var)
+                    <li><code class="bg-amber-100 px-1.5 py-0.5 rounded text-xs">{{ $var }}</code></li>
+                @endforeach
+            </ul>
+            @endif
+            <div class="text-xs text-amber-600 mt-3">
+                <i class="fa-solid fa-circle-info mr-1"></i>
+                Después de editar el .env, ejecuta: <code class="bg-amber-100 px-1 rounded">docker-compose exec app php artisan config:clear</code>
             </div>
         </div>
     </div>
@@ -151,123 +157,6 @@
     </div>
 </div>
 
-{{-- Modal Credenciales --}}
-<div id="credentialsModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <div class="p-6 border-b dark:border-gray-700 flex items-center justify-between">
-            <div class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-xl flex items-center justify-center text-white"
-                     style="background:#1a1a2e">
-                    <i class="fa-solid fa-gear text-sm"></i>
-                </div>
-                <div>
-                    <h3 class="font-bold text-gray-800 dark:text-white">Credenciales MSP</h3>
-                    <p class="text-xs text-gray-500">SharePoint & SendGrid</p>
-                </div>
-            </div>
-            <button onclick="closeModal('credentialsModal')" class="text-gray-400 hover:text-gray-600">
-                <i class="fa-solid fa-xmark text-lg"></i>
-            </button>
-        </div>
-
-        <form action="{{ route('admin.msp.settings.save') }}" method="POST">
-            @csrf
-            <div class="p-6 space-y-6">
-
-                {{-- Azure / SharePoint --}}
-                <div>
-                    <h4 class="text-sm font-bold text-gray-700 dark:text-gray-200 mb-3 flex items-center gap-2">
-                        <i class="fa-brands fa-microsoft text-blue-600"></i> Azure / SharePoint
-                    </h4>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label class="text-xs font-semibold text-gray-500 uppercase mb-1 block">Tenant ID</label>
-                            <input type="text" name="azure_tenant_id" value="{{ $settings['azure_tenant_id'] ?? '' }}"
-                                   placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                                   class="w-full border rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
-                        </div>
-                        <div>
-                            <label class="text-xs font-semibold text-gray-500 uppercase mb-1 block">Client ID</label>
-                            <input type="text" name="azure_client_id" value="{{ $settings['azure_client_id'] ?? '' }}"
-                                   placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                                   class="w-full border rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
-                        </div>
-                        <div>
-                            <label class="text-xs font-semibold text-gray-500 uppercase mb-1 block">Client Secret</label>
-                            <div class="relative">
-                                <input type="password" name="azure_client_secret" id="f_secret"
-                                       placeholder="Dejar en blanco para no cambiar"
-                                       class="w-full border rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 pr-10 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
-                                <button type="button" onclick="togglePass('f_secret')"
-                                        class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
-                                    <i class="fa-solid fa-eye text-xs"></i>
-                                </button>
-                            </div>
-                        </div>
-                        <div>
-                            <label class="text-xs font-semibold text-gray-500 uppercase mb-1 block">Folder ID</label>
-                            <input type="text" name="sharepoint_folder_id" value="{{ $settings['sharepoint_folder_id'] ?? '' }}"
-                                   placeholder="0162CR6X..."
-                                   class="w-full border rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
-                        </div>
-                        <div class="md:col-span-2">
-                            <label class="text-xs font-semibold text-gray-500 uppercase mb-1 block">Site URL</label>
-                            <input type="url" name="sharepoint_site_url" value="{{ $settings['sharepoint_site_url'] ?? '' }}"
-                                   placeholder="https://empresa.sharepoint.com/sites/Nombre"
-                                   class="w-full border rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
-                        </div>
-                        <div class="md:col-span-2">
-                            <label class="text-xs font-semibold text-gray-500 uppercase mb-1 block">Archivo por defecto</label>
-                            <input type="text" name="sharepoint_default_file" value="{{ $settings['sharepoint_default_file'] ?? '' }}"
-                                   placeholder="MSP_REPORT.xlsx"
-                                   class="w-full border rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
-                        </div>
-                    </div>
-                </div>
-
-                {{-- SendGrid --}}
-                <div class="border-t dark:border-gray-600 pt-5">
-                    <h4 class="text-sm font-bold text-gray-700 dark:text-gray-200 mb-3 flex items-center gap-2">
-                        <i class="fa-solid fa-envelope text-orange-500"></i> SendGrid
-                    </h4>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label class="text-xs font-semibold text-gray-500 uppercase mb-1 block">API Key</label>
-                            <div class="relative">
-                                <input type="password" name="sendgrid_api_key" id="f_sgkey"
-                                       placeholder="Dejar en blanco para no cambiar"
-                                       class="w-full border rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-orange-500 pr-10 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
-                                <button type="button" onclick="togglePass('f_sgkey')"
-                                        class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
-                                    <i class="fa-solid fa-eye text-xs"></i>
-                                </button>
-                            </div>
-                        </div>
-                        <div>
-                            <label class="text-xs font-semibold text-gray-500 uppercase mb-1 block">From Email</label>
-                            <input type="email" name="sendgrid_from_email" value="{{ $settings['sendgrid_from_email'] ?? '' }}"
-                                   placeholder="reportes@empresa.com"
-                                   class="w-full border rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-orange-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="p-6 border-t dark:border-gray-700 flex gap-3">
-                <button type="submit"
-                        class="flex-1 text-white py-2.5 rounded-lg text-sm font-medium hover:opacity-90"
-                        style="background:#d4520a">
-                    <i class="fa-solid fa-floppy-disk mr-2"></i> Guardar credenciales
-                </button>
-                <button type="button" onclick="closeModal('credentialsModal')"
-                        class="px-6 border py-2.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50">
-                    Cancelar
-                </button>
-            </div>
-        </form>
-    </div>
-</div>
-
 @endsection
 
 @push('scripts')
@@ -344,17 +233,8 @@ function openImportModal(filename, itemId) {
     document.getElementById('importModal').classList.remove('hidden');
 }
 
-function openCredentialsModal() {
-    document.getElementById('credentialsModal').classList.remove('hidden');
-}
-
 function closeModal(id) {
     document.getElementById(id).classList.add('hidden');
-}
-
-function togglePass(id) {
-    const el = document.getElementById(id);
-    el.type  = el.type === 'password' ? 'text' : 'password';
 }
 
 // ── Submit importar ───────────────────────────────────────────────────────────

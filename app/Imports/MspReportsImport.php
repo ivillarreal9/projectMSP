@@ -80,7 +80,7 @@ class MspReportsImport implements ToModel, WithHeadingRow, WithChunkReading, Ski
                 'semana'                => $semana,
                 'mes_cierre'            => $mesCierre,
                 'tipo_ticket'           => isset($row['tipo_de_ticket']) ? trim($row['tipo_de_ticket']) : null,
-                'clasificacion_eventos' => isset($row['clasificacion_de_eventos']) ? trim($row['clasificacion_de_eventos']) : null,
+                'clasificacion_eventos' => $this->normalizeText($row['clasificacion_de_eventos'] ?? null),
                 'causa_dano'            => isset($row['causa_de_dano']) ? trim($row['causa_de_dano']) : null,
                 'solucion'              => isset($row['solucion']) ? trim($row['solucion']) : null,
                 'detalle'               => $row['detalle'] ?? null,
@@ -97,6 +97,17 @@ class MspReportsImport implements ToModel, WithHeadingRow, WithChunkReading, Ski
         );
 
         return null;
+    }
+
+    /**
+     * Normaliza texto a minúsculas limpias para evitar duplicados por
+     * diferencias de capitalización ("No Imputable" vs "no imputable").
+     */
+    private function normalizeText(mixed $value): ?string
+    {
+        if ($value === null || $value === '') return null;
+        // Minúsculas, sin espacios al inicio/fin, y múltiples espacios internos a uno solo
+        return preg_replace('/\s+/', ' ', trim(mb_strtolower((string) $value)));
     }
 
     private function resolveDate(mixed $value): ?\Carbon\Carbon

@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Models\MspSetting;
 use Illuminate\Support\Facades\Http;
 
 class SharePointService
@@ -16,24 +15,35 @@ class SharePointService
 
     public function __construct()
     {
-        $this->tenantId     = MspSetting::get('azure_tenant_id', '');
-        $this->clientId     = MspSetting::get('azure_client_id', '');
-        $this->clientSecret = MspSetting::get('azure_client_secret', '');
-        $this->siteUrl      = MspSetting::get('sharepoint_site_url', '');
-        $this->folderId     = MspSetting::get('sharepoint_folder_id', '');
+        $this->tenantId     = (string) config('services.sharepoint.tenant_id', '');
+        $this->clientId     = (string) config('services.sharepoint.client_id', '');
+        $this->clientSecret = (string) config('services.sharepoint.client_secret', '');
+        $this->siteUrl      = (string) config('services.sharepoint.site_url', '');
+        $this->folderId     = (string) config('services.sharepoint.folder_id', '');
     }
 
-    // ─── Validar que hay credenciales configuradas ────────────────────────────
     public function hasCredentials(): bool
     {
-        return !empty($this->tenantId) &&
-               !empty($this->clientId) &&
-               !empty($this->clientSecret) &&
-               !empty($this->siteUrl) &&
-               !empty($this->folderId);
+        return !empty($this->tenantId)
+            && !empty($this->clientId)
+            && !empty($this->clientSecret)
+            && !empty($this->siteUrl)
+            && !empty($this->folderId);
     }
 
-    // ─── 1. Obtener Access Token ──────────────────────────────────────────────
+    public function missingCredentials(): array
+    {
+        $map = [
+            'AZURE_TENANT_ID'       => $this->tenantId,
+            'AZURE_CLIENT_ID'       => $this->clientId,
+            'AZURE_CLIENT_SECRET'   => $this->clientSecret,
+            'SHAREPOINT_SITE_URL'   => $this->siteUrl,
+            'SHAREPOINT_FOLDER_ID'  => $this->folderId,
+        ];
+
+        return array_keys(array_filter($map, fn($v) => empty($v)));
+    }
+
     public function getAccessToken(): string
     {
         if ($this->accessToken) return $this->accessToken;
@@ -56,12 +66,11 @@ class SharePointService
         return $this->accessToken;
     }
 
-    // ─── 2. Obtener Site ID ───────────────────────────────────────────────────
     public function getSiteId(): string
     {
         $parsed   = parse_url($this->siteUrl);
-        $hostname = $parsed['host'];
-        $sitePath = ltrim($parsed['path'], '/');
+        $hostname = $parsed['host'] ?? '';
+        $sitePath = ltrim($parsed['path'] ?? '', '/');
 
         $response = Http::withToken($this->getAccessToken())
             ->get("https://graph.microsoft.com/v1.0/sites/{$hostname}:/{$sitePath}");
@@ -73,7 +82,6 @@ class SharePointService
         return $response->json('id');
     }
 
-    // ─── 3. Obtener Drive ID ──────────────────────────────────────────────────
     public function getDriveId(string $siteId): string
     {
         $response = Http::withToken($this->getAccessToken())
@@ -94,7 +102,6 @@ class SharePointService
         return $drives[0]['id'];
     }
 
-    // ─── 4. Listar archivos Excel usando folder ID ────────────────────────────
     public function listExcelFiles(): array
     {
         $token   = $this->getAccessToken();
@@ -122,7 +129,6 @@ class SharePointService
             ->toArray();
     }
 
-    // ─── 5. Descargar archivo por nombre ─────────────────────────────────────
     public function downloadFileByName(string $filename): string
     {
         $token   = $this->getAccessToken();
@@ -148,7 +154,6 @@ class SharePointService
         return $tempPath;
     }
 
-    // ─── 6. Descargar por item ID ─────────────────────────────────────────────
     public function downloadFileById(string $itemId, string $filename): string
     {
         $token   = $this->getAccessToken();
@@ -164,7 +169,6 @@ class SharePointService
 
         $downloadUrl = $response->json('@microsoft.graph.downloadUrl');
 
-        // Si no trae downloadUrl, usar el endpoint de content directamente
         if (empty($downloadUrl)) {
             $contentResponse = Http::withToken($token)
                 ->get("https://graph.microsoft.com/v1.0/sites/{$siteId}/drives/{$driveId}/items/{$itemId}/content");
