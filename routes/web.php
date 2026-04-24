@@ -14,6 +14,7 @@ use App\Http\Controllers\Admin\Sales\SalesReassignController;
 use App\Http\Controllers\Admin\MspReportController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\MspPlantillaController;
+use App\Http\Controllers\Admin\Reports\Msp\MspChatController;
 use App\Http\Controllers\Admin\ClientMergeController;
 use App\Http\Controllers\Admin\SurveyTypeController;
 use App\Http\Controllers\Admin\SurveyController;
@@ -73,9 +74,10 @@ Route::middleware(['auth', 'role:admin'])
             Route::post('/correos/masivo',  [MspReportController::class, 'enviarMasivo'])->name('correos.masivo');
 
             // Chat IA
-            Route::get('/chat',      [MspReportController::class, 'chat'])->name('chat');
-            Route::post('/chat/api', [MspReportController::class, 'chatApi'])->name('chat.api');
-
+            Route::post('/chat/api',              [MspChatController::class, 'api'])->name('chat.api');
+            Route::get('/chat/clientes',          [MspChatController::class, 'buscarClientes'])->name('chat.clientes');
+            Route::get('/chat/periodos',          [MspChatController::class, 'periodosCliente'])->name('chat.periodos');
+            
             // Plantillas
             Route::get('/plantillas',         [MspPlantillaController::class, 'index'])->name('plantillas.index');
             Route::post('/plantillas',        [MspPlantillaController::class, 'store'])->name('plantillas.store');

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin\Sales;
 use App\Http\Controllers\Controller;
 use App\Services\Sales\OdooService;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class SalesReassignController extends Controller
 {
@@ -12,29 +13,32 @@ class SalesReassignController extends Controller
 
     public function index(Request $request, OdooService $odoo)
     {
-        $days      = (int) $request->get('days', 60);
-        $ejecutiva = $request->get('ejecutiva', '');
+        $days      = (int) ($request->get('days', 60));
+        $ejecutiva = $request->get('ejecutiva') ?? '';
         $page      = max(1, (int) $request->get('page', 1));
         $offset    = ($page - 1) * self::PER_PAGE;
 
-        $allClients = collect($odoo->getClientsForReassign($days));
+        // ── Total y paginación ───────────────────────────────
+        $totalClients = $odoo->countClientsForReassign($days, $ejecutiva);
+        $totalPages   = (int) ceil($totalClients / self::PER_PAGE);
+        $page         = min($page, max(1, $totalPages));
 
-        if ($ejecutiva !== '') {
-            $allClients = $allClients->filter(function ($c) use ($ejecutiva) {
-                $uid = is_array($c['user_id']) ? (string) $c['user_id'][0] : '';
-                return $uid === $ejecutiva;
-            });
-        }
+        // ── Página actual ────────────────────────────────────
+        $rawClients = collect($odoo->getClientsForReassignPaginated(
+            $days, $ejecutiva, self::PER_PAGE, $offset
+        ));
 
-        $today = now();
-        $allClients = $allClients->map(function ($c) use ($today) {
-            // Usar activity_date_deadline si existe, sino creation_date
-            $ref = !empty($c['activity_date_deadline'])
-                ? $c['activity_date_deadline']
-                : $c['creation_date'];
+        // ── Última factura desde account.move ────────────────
+        $partnerIds  = $rawClients->pluck('id')->filter()->map(fn($id) => (int)$id)->values()->all();
+        $invoiceMap  = $odoo->getLastInvoiceDateByPartners($partnerIds);
 
-            $daysOld = $ref
-                ? (int) abs($today->diffInDays(\Carbon\Carbon::parse($ref)))
+        $today   = now();
+        $clients = $rawClients->map(function ($c) use ($today, $invoiceMap) {
+            $partnerId   = (int) $c['id'];
+            $lastInvoice = $invoiceMap[$partnerId] ?? null;
+
+            $daysOld = $lastInvoice
+                ? (int) abs($today->diffInDays(\Carbon\Carbon::parse($lastInvoice)))
                 : 999;
 
             $riskLabel = match(true) {
@@ -44,27 +48,24 @@ class SalesReassignController extends Controller
             };
 
             return array_merge($c, [
-                'days_old'        => $daysOld,
-                'risk_label'      => $riskLabel,
-                'executive'       => is_array($c['user_id']) ? $c['user_id'][1] : '—',
-                'user_id_int'     => is_array($c['user_id']) ? (string) $c['user_id'][0] : '',
-                'date_last_invoice' => $c['creation_date'] ?? null,
+                'days_old'          => $daysOld,
+                'risk_label'        => $riskLabel,
+                'executive'         => is_array($c['user_id']) ? $c['user_id'][1] : '—',
+                'user_id_int'       => is_array($c['user_id']) ? (string) $c['user_id'][0] : '',
+                'date_last_invoice' => $lastInvoice,
             ]);
         })->values();
 
-        $totalClients = $allClients->count();
-        $alDia        = $allClients->where('risk_label', 'Al día')->count();
-        $atencion     = $allClients->where('risk_label', 'Atención')->count();
-        $enRiesgo     = $allClients->where('risk_label', 'En riesgo')->count();
+        // ── KPIs de riesgo — sobre la página actual ──────────
+        $alDia    = $clients->filter(fn($c) => $c['risk_label'] === 'Al día')->count();
+        $atencion = $clients->filter(fn($c) => $c['risk_label'] === 'Atención')->count();
+        $enRiesgo = $clients->filter(fn($c) => $c['risk_label'] === 'En riesgo')->count();
 
-        $totalPages = (int) ceil($totalClients / self::PER_PAGE);
-        $page       = min($page, max(1, $totalPages));
-        $clients    = $allClients->slice($offset, self::PER_PAGE)->values();
-
-        $ejecutivas = $allClients->map(fn($c) => [
-            'id'   => $c['user_id_int'],
-            'name' => $c['executive'],
-        ])->unique('id')->filter(fn($e) => $e['id'] !== '')->sortBy('name')->values();
+        // ── Ejecutivas para filtro ───────────────────────────
+        $ejecutivas = collect($odoo->getExecutives())->map(fn($e) => [
+            'id'   => (string) $e['id'],
+            'name' => $e['name'],
+        ])->values();
 
         return view('admin.sales.reassign.index', compact(
             'clients', 'days', 'ejecutiva', 'ejecutivas',
@@ -73,24 +74,27 @@ class SalesReassignController extends Controller
         ));
     }
 
-    public function export(Request $request)
+    public function export(Request $request): StreamedResponse
     {
-        $clients = $request->input('clients', []);
-
+        $clients  = $request->input('clients', []);
         $filename = 'reasignacion_' . now()->format('Y-m-d') . '.csv';
-        $csv      = "\xEF\xBB\xBF"; // BOM para Excel
-        $csv     .= "Nombre,Ejecutiva,Días sin actividad,Última factura\n";
 
-        foreach ($clients as $c) {
-            $csv .= implode(',', array_map(
-                fn($v) => '"' . str_replace('"', '""', $v ?? '') . '"',
-                [$c['name'], $c['executive'], $c['days'], $c['last_invoice']]
-            )) . "\n";
-        }
+        return response()->streamDownload(function () use ($clients) {
+            $handle = fopen('php://output', 'w');
+            fputs($handle, "\xEF\xBB\xBF"); // BOM para Excel
 
-        return response($csv, 200, [
-            'Content-Type'        => 'text/csv; charset=UTF-8',
-            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
-        ]);
+            fputcsv($handle, ['Nombre', 'Ejecutiva', 'Días sin actividad', 'Última factura']);
+
+            foreach ($clients as $c) {
+                fputcsv($handle, [
+                    $c['name']         ?? '',
+                    $c['executive']    ?? '',
+                    $c['days']         ?? '',
+                    $c['last_invoice'] ?? '',
+                ]);
+            }
+
+            fclose($handle);
+        }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);
     }
 }
