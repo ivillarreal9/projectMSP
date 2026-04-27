@@ -60,7 +60,6 @@ class Meta2Controller extends Controller
             return back()->with('error', $e->getMessage());
         }
 
-        // Renderizar la vista a HTML
         $html = view('admin.meta-2.pdf', $data)->render();
 
         $monthName = \Carbon\Carbon::createFromDate($year, $month, 1)
@@ -69,7 +68,6 @@ class Meta2Controller extends Controller
         $filename = "informe-meta2-{$monthName}-{$year}.pdf";
         $path     = storage_path("app/public/{$filename}");
 
-        // Generar PDF con Browsershot
         Browsershot::html($html)
             ->setChromePath(env('BROWSERSHOT_CHROME_PATH'))
             ->setNodeBinary(env('BROWSERSHOT_NODE_PATH'))
@@ -78,7 +76,7 @@ class Meta2Controller extends Controller
             ->newHeadlessMode()
             ->noSandbox()
             ->waitUntilNetworkIdle()
-            ->paperSize(279.4, 215.9) // 👈 Letter: 8.5" x 11" en mm
+            ->paperSize(279.4, 215.9)
             ->landscape()
             ->margins(8, 8, 8, 8)
             ->savePdf($path);
@@ -93,16 +91,24 @@ class Meta2Controller extends Controller
         $month  = (int) $request->get('month');
         $year   = (int) $request->get('year');
         $search = (string) $request->get('search', '');
+
         if (!$month || !$year) {
             abort(400, 'Mes y año requeridos.');
         }
 
         return response()->stream(function () use ($month, $year, $search) {
 
+            // Limpiar todos los niveles de buffer antes de empezar SSE
+            while (ob_get_level() > 0) {
+                ob_end_flush();
+            }
+
             $send = function (string $event, array $data) {
                 echo "event: {$event}\n";
                 echo 'data: ' . json_encode($data) . "\n\n";
-                ob_flush();
+                while (ob_get_level() > 0) {
+                    ob_end_flush();
+                }
                 flush();
             };
 
@@ -132,7 +138,6 @@ class Meta2Controller extends Controller
                 $send('done', ['html' => $html, 'total' => count($result)]);
 
             } catch (\Throwable $e) {
-                // ← Throwable captura también errores fatales, no solo Exception
                 $send('error', [
                     'message' => $e->getMessage(),
                     'file'    => $e->getFile(),
@@ -146,7 +151,7 @@ class Meta2Controller extends Controller
             'X-Accel-Buffering' => 'no',
         ]);
     }
-    
+
     public function exportExcel(Request $request)
     {
         $month = (int) $request->get('month');
@@ -162,16 +167,12 @@ class Meta2Controller extends Controller
             return back()->with('error', 'No hay tickets para exportar en ese período.');
         }
 
-        // ── Crear el spreadsheet ──────────────────────────────────────────────
         $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
         $sheet       = $spreadsheet->getActiveSheet();
         $sheet->setTitle('META 2 - Telefonía');
 
-        // ── Encabezados ───────────────────────────────────────────────────────
-        // Columnas fijas
         $fixedHeaders = ['Ticket #', 'Tipo', 'Creado', 'Completado'];
 
-        // Columnas dinámicas — sacar las keys de custom_fields del primer ticket
         $customKeys = [];
         foreach ($tickets as $ticket) {
             foreach (array_keys($ticket['custom_fields'] ?? []) as $key) {
@@ -183,13 +184,11 @@ class Meta2Controller extends Controller
 
         $headers = array_merge($fixedHeaders, $customKeys);
 
-        // Escribir encabezados
         foreach ($headers as $col => $header) {
             $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col + 1) . '1';
             $sheet->setCellValue($cell, $header);
         }
 
-        // Estilo encabezados
         $lastCol = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(count($headers));
         $sheet->getStyle("A1:{$lastCol}1")->applyFromArray([
             'font'      => ['bold' => true, 'color' => ['argb' => 'FFFFFFFF']],
@@ -197,9 +196,8 @@ class Meta2Controller extends Controller
             'alignment' => ['horizontal' => 'center'],
         ]);
 
-        // ── Filas de datos ────────────────────────────────────────────────────
         foreach ($tickets as $rowIndex => $ticket) {
-            $row = $rowIndex + 2; // fila 1 = encabezados
+            $row = $rowIndex + 2;
 
             $fixedValues = [
                 $ticket['ticket_number']  ?? '',
@@ -220,7 +218,6 @@ class Meta2Controller extends Controller
                 $sheet->setCellValue($cell, $value);
             }
 
-            // Filas alternas con color
             if ($rowIndex % 2 === 0) {
                 $sheet->getStyle("A{$row}:{$lastCol}{$row}")->applyFromArray([
                     'fill' => ['fillType' => 'solid', 'startColor' => ['argb' => 'FFF0F4FF']],
@@ -228,12 +225,10 @@ class Meta2Controller extends Controller
             }
         }
 
-        // Auto-ancho de columnas
         foreach (range(1, count($headers)) as $col) {
             $sheet->getColumnDimensionByColumn($col)->setAutoSize(true);
         }
 
-        // ── Generar archivo y descargar ───────────────────────────────────────
         $monthName = \Carbon\Carbon::createFromDate($year, $month, 1)->locale('es')->monthName;
         $filename  = "meta2-telefonia-{$monthName}-{$year}.xlsx";
 
