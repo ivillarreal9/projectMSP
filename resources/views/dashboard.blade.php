@@ -154,6 +154,29 @@
                 </a>
                 @endif
 
+                {{-- GLPI --}}
+                @if(auth()->user()->canAccessModule('glpi'))
+                <a href="{{ route('admin.glpi.index') }}"
+                class="group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 hover:border-cyan-400 dark:hover:border-cyan-500 hover:shadow-md transition-all duration-200">
+                    <div class="flex items-start justify-between mb-4">
+                        <div class="w-10 h-10 bg-cyan-50 dark:bg-cyan-900/30 rounded-lg flex items-center justify-center group-hover:bg-cyan-100 dark:group-hover:bg-cyan-900/50 transition">
+                            <svg class="w-5 h-5 text-cyan-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.₀₁M17 16h.₀₁"/>
+                            </svg>
+                        </div>
+                        <svg class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-cyan-400 transition" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                        </svg>
+                    </div>
+                    <h3 class="text-sm font-semibold text-gray-800 dark:text-gray-200 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition">
+                        GLPI
+                    </h3>
+                    <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                        Inventario de activos y equipos
+                    </p>
+                </a>
+                @endif
+
                 {{-- Mensaje si no tiene módulos --}}
                 @if(count(auth()->user()->modulosAccesibles()) === 0)
                 <div class="col-span-full flex flex-col items-center justify-center py-16 text-center text-gray-400 dark:text-gray-500">

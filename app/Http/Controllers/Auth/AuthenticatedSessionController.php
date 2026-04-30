@@ -26,9 +26,22 @@ class AuthenticatedSessionController extends Controller
     {
         $request->authenticate();
 
-        $request->session()->regenerate();
+        $user = Auth::user();
 
-        return redirect()->intended(route('dashboard', absolute: false));
+        // CASO 1: Sin 2FA configurado → forzar setup
+        if (!$user->two_factor_secret || !$user->two_factor_confirmed) {
+            $request->session()->regenerate();
+            return redirect()->route('2fa.setup');
+        }
+
+        // CASO 2: Con 2FA → pedir código en cada login
+        $userId = $user->id;
+        Auth::logout();
+
+        $request->session()->put('2fa_user_id', $userId);
+        $request->session()->save();
+
+        return redirect()->route('2fa.verify');
     }
 
     /**

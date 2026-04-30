@@ -18,6 +18,8 @@ class User extends Authenticatable
         'password',
         'role',      // campo string legacy (para el middleware role:admin,editor,etc)
         'role_id',   // FK al nuevo sistema dinámico
+        'two_factor_secret',
+        'two_factor_confirmed',
     ];
 
     protected $hidden = [
@@ -30,6 +32,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password'          => 'hashed',
+            'two_factor_confirmed' => 'boolean',
         ];
     }
 

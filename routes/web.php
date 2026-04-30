@@ -18,6 +18,8 @@ use App\Http\Controllers\Admin\Reports\Msp\MspChatController;
 use App\Http\Controllers\Admin\ClientMergeController;
 use App\Http\Controllers\Admin\SurveyTypeController;
 use App\Http\Controllers\Admin\SurveyController;
+use App\Http\Controllers\Admin\GlpiController;
+use App\Http\Controllers\Auth\TwoFactorController;
 use Illuminate\Support\Facades\Route;
 
 // ─── Públicas ─────────────────────────────────────────────────────────────────
@@ -34,78 +36,60 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
 
-// ─── Admin ────────────────────────────────────────────────────────────────────
+// ─── Solo Admin ───────────────────────────────────────────────────────────────
 Route::middleware(['auth', 'role:admin'])
     ->prefix('admin')
     ->name('admin.')
     ->group(function () {
 
-        // ── Usuarios ──────────────────────────────────────────────────────────
+        // Usuarios
         Route::resource('users', UserController::class);
         Route::put('users/{user}/password', [UserController::class, 'changePassword'])
             ->name('users.password');
 
-        // ── MSP Reports ───────────────────────────────────────────────────────
+        // Roles
+        Route::get('/roles',           [RoleController::class, 'index'])->name('roles.index');
+        Route::post('/roles',          [RoleController::class, 'store'])->name('roles.store');
+        Route::put('/roles/{role}',    [RoleController::class, 'update'])->name('roles.update');
+        Route::delete('/roles/{role}', [RoleController::class, 'destroy'])->name('roles.destroy');
+
+        // MSP Reports
         Route::prefix('reports/msp')->name('msp.')->group(function () {
+            Route::get('/',        [MspReportController::class, 'index'])->name('index');
+            Route::post('/upload', [MspReportController::class, 'upload'])->name('upload');
 
-            // Importación
-            Route::get('/',             [MspReportController::class, 'index'])->name('index');
-            Route::post('/upload',      [MspReportController::class, 'upload'])->name('upload');
-
-            // SharePoint
             Route::get('/sharepoint',         [MspReportController::class, 'sharepointIndex'])->name('sharepoint');
             Route::post('/sharepoint/import', [MspReportController::class, 'sharepointImport'])->name('sharepoint.import');
 
-            // Clientes
-            Route::get('/clientes',                        [MspReportController::class, 'clientes'])->name('clientes');
-            Route::get('/clientes/{customer}',             [MspReportController::class, 'clienteDetalle'])->name('clientes.detalle');
-            Route::post('/clientes/{customer}/update',     [MspReportController::class, 'updateCliente'])->name('clientes.update');
-            Route::post('/clientes/{customer}/logo',       [MspReportController::class, 'uploadLogo'])->name('clientes.logo');
+            Route::get('/clientes',                    [MspReportController::class, 'clientes'])->name('clientes');
+            Route::get('/clientes/{customer}',         [MspReportController::class, 'clienteDetalle'])->name('clientes.detalle');
+            Route::post('/clientes/{customer}/update', [MspReportController::class, 'updateCliente'])->name('clientes.update');
+            Route::post('/clientes/{customer}/logo',   [MspReportController::class, 'uploadLogo'])->name('clientes.logo');
 
-            // PDFs
-            Route::get('/pdf/{customer}/preview',          [MspReportController::class, 'pdfPreview'])->name('pdf.preview');
-            Route::get('/pdf/{customer}/download',         [MspReportController::class, 'pdfDownload'])->name('pdf.download');
-            Route::get('/pdf/descarga-masiva',             [MspReportController::class, 'descargaMasivaIndex'])->name('pdf.masiva');
-            Route::post('/pdf/descarga-masiva/zip',        [MspReportController::class, 'descargaMasivaZip'])->name('pdf.masiva.zip');
+            Route::get('/pdf/{customer}/preview',   [MspReportController::class, 'pdfPreview'])->name('pdf.preview');
+            Route::get('/pdf/{customer}/download',  [MspReportController::class, 'pdfDownload'])->name('pdf.download');
+            Route::get('/pdf/descarga-masiva',      [MspReportController::class, 'descargaMasivaIndex'])->name('pdf.masiva');
+            Route::post('/pdf/descarga-masiva/zip', [MspReportController::class, 'descargaMasivaZip'])->name('pdf.masiva.zip');
 
-            // Correos
-            Route::get('/correos',          [MspReportController::class, 'correos'])->name('correos');
-            Route::post('/correos/enviar',  [MspReportController::class, 'enviarCorreo'])->name('correos.enviar');
-            Route::post('/correos/masivo',  [MspReportController::class, 'enviarMasivo'])->name('correos.masivo');
+            Route::get('/correos',         [MspReportController::class, 'correos'])->name('correos');
+            Route::post('/correos/enviar', [MspReportController::class, 'enviarCorreo'])->name('correos.enviar');
+            Route::post('/correos/masivo', [MspReportController::class, 'enviarMasivo'])->name('correos.masivo');
 
-            // Chat IA
-            Route::post('/chat/api',              [MspChatController::class, 'api'])->name('chat.api');
-            Route::get('/chat/clientes',          [MspChatController::class, 'buscarClientes'])->name('chat.clientes');
-            Route::get('/chat/periodos',          [MspChatController::class, 'periodosCliente'])->name('chat.periodos');
-            
-            // Plantillas
-            Route::get('/plantillas',         [MspPlantillaController::class, 'index'])->name('plantillas.index');
-            Route::post('/plantillas',        [MspPlantillaController::class, 'store'])->name('plantillas.store');
+            Route::post('/chat/api',     [MspChatController::class, 'api'])->name('chat.api');
+            Route::get('/chat/clientes', [MspChatController::class, 'buscarClientes'])->name('chat.clientes');
+            Route::get('/chat/periodos', [MspChatController::class, 'periodosCliente'])->name('chat.periodos');
+
+            Route::get('/plantillas',                [MspPlantillaController::class, 'index'])->name('plantillas.index');
+            Route::post('/plantillas',               [MspPlantillaController::class, 'store'])->name('plantillas.store');
             Route::delete('/plantillas/{plantilla}', [MspPlantillaController::class, 'destroy'])->name('plantillas.destroy');
-            Route::post('/plantillas/{plantilla}', [MspPlantillaController::class, 'update'])->name('plantillas.update');
-
-
+            Route::post('/plantillas/{plantilla}',   [MspPlantillaController::class, 'update'])->name('plantillas.update');
         });
-        
-        // Roles
-        Route::get('/roles', [RoleController::class, 'index'])->name('roles.index');
-        Route::post('/roles', [RoleController::class, 'store'])->name('roles.store');
-        Route::put('/roles/{role}', [RoleController::class, 'update'])->name('roles.update');
-        Route::delete('/roles/{role}', [RoleController::class, 'destroy'])->name('roles.destroy');
 
-        // ── Encuestas ─────────────────────────────────────────────────────────
-        Route::get('surveys',                           [SurveyTypeController::class, 'index'])->name('surveys.index');
-        Route::post('survey-types',                     [SurveyTypeController::class, 'store'])->name('survey-types.store');
-        Route::delete('survey-types/{surveyType}',      [SurveyTypeController::class, 'destroy'])->name('survey-types.destroy');
-        Route::get('surveys/{slug}',                    [SurveyController::class, 'show'])->name('surveys.show');
-        Route::get('surveys/{slug}/export',             [SurveyController::class, 'export'])->name('surveys.export');
-        Route::post('surveys/token',                    [SurveyController::class, 'generateToken'])->name('surveys.token');
-
-        // ── Meta 2 ────────────────────────────────────────────────────────────
-        Route::get('meta-2/stream',      [Meta2Controller::class, 'stream'])->name('meta-2.stream');
-        Route::get('meta-2/pdf-preview', fn() => view('admin.meta-2.pdf', (new \App\Services\Meta2Service())->getPdfReportData(3, 2026)))->name('meta-2.pdf-preview');
-        Route::get('meta-2/export-pdf',  [Meta2Controller::class, 'exportPdf'])->name('meta-2.export-pdf');
-        Route::get('meta-2/export-excel',[Meta2Controller::class, 'exportExcel'])->name('meta-2.export-excel');
+        // Meta 2
+        Route::get('meta-2/stream',       [Meta2Controller::class, 'stream'])->name('meta-2.stream');
+        Route::get('meta-2/pdf-preview',  fn() => view('admin.meta-2.pdf', (new \App\Services\Meta2Service())->getPdfReportData(3, 2026)))->name('meta-2.pdf-preview');
+        Route::get('meta-2/export-pdf',   [Meta2Controller::class, 'exportPdf'])->name('meta-2.export-pdf');
+        Route::get('meta-2/export-excel', [Meta2Controller::class, 'exportExcel'])->name('meta-2.export-excel');
         Route::resource('meta-2', Meta2Controller::class)->only(['index', 'create', 'store', 'edit', 'update', 'destroy']);
     });
 
@@ -115,13 +99,20 @@ Route::middleware(['auth', 'role:admin,editor'])
     ->name('admin.')
     ->group(function () {
 
-        // API MSP
-        Route::get('api-msp',         [ApiMspController::class, 'index'])->name('api-msp.index');
-        Route::get('api-msp/export',  [ApiMspController::class, 'export'])->name('api-msp.export');
-        Route::get('api-msp/results', [ApiMspController::class, 'results'])->name('api-msp.results');
-        Route::post('api-msp/chat',   [ApiMspController::class, 'chat'])->name('api-msp.chat');
-        Route::post('api-msp/credentials', [ApiMspController::class, 'saveCredentials'])->name('api-msp.credentials'); // ← AGREGAR
+        // Encuestas
+        Route::get('surveys',                      [SurveyTypeController::class, 'index'])->name('surveys.index');
+        Route::post('survey-types',                [SurveyTypeController::class, 'store'])->name('survey-types.store');
+        Route::delete('survey-types/{surveyType}', [SurveyTypeController::class, 'destroy'])->name('survey-types.destroy');
+        Route::get('surveys/{slug}',               [SurveyController::class, 'show'])->name('surveys.show');
+        Route::get('surveys/{slug}/export',        [SurveyController::class, 'export'])->name('surveys.export');
+        Route::post('surveys/token',               [SurveyController::class, 'generateToken'])->name('surveys.token');
 
+        // API MSP
+        Route::get('api-msp',              [ApiMspController::class, 'index'])->name('api-msp.index');
+        Route::get('api-msp/export',       [ApiMspController::class, 'export'])->name('api-msp.export');
+        Route::get('api-msp/results',      [ApiMspController::class, 'results'])->name('api-msp.results');
+        Route::post('api-msp/chat',        [ApiMspController::class, 'chat'])->name('api-msp.chat');
+        Route::post('api-msp/credentials', [ApiMspController::class, 'saveCredentials'])->name('api-msp.credentials');
 
         // API Customers
         Route::get('api-customers',        [ApiCustomersController::class, 'index'])->name('api-customers.index');
@@ -131,6 +122,25 @@ Route::middleware(['auth', 'role:admin,editor'])
         // Client Merge
         Route::get('client-merge',          [ClientMergeController::class, 'index'])->name('client-merge.index');
         Route::post('client-merge/process', [ClientMergeController::class, 'process'])->name('client-merge.process');
+
+        // GLPI — Inventario de Activos
+        Route::prefix('glpi')->name('glpi.')->group(function () {
+            Route::get('/', [GlpiController::class, 'index'])->name('index');
+            
+            // Sesión GLPI
+            Route::post('/session/init', [GlpiController::class, 'sessionInit'])->name('session.init');
+            Route::post('/session/kill', [GlpiController::class, 'sessionKill'])->name('session.kill');
+
+            // Rutas con segmentos fijos PRIMERO (antes de wildcards)
+            Route::get('/{itemtype}/create',    [GlpiController::class, 'create'])->name('create');
+            Route::post('/{itemtype}',          [GlpiController::class, 'store'])->name('store');
+            Route::get('/{itemtype}/{id}/edit', [GlpiController::class, 'edit'])->name('edit');
+            Route::put('/{itemtype}/{id}',      [GlpiController::class, 'update'])->name('update');
+            Route::get('/{itemtype}/{id}',      [GlpiController::class, 'show'])->name('show');
+
+            // Wildcard al final
+            Route::get('/{itemtype}',           [GlpiController::class, 'items'])->name('items');
+        });
     });
 
 // ─── SSE — fuera del grupo para evitar bloqueo de sesión ─────────────────────
@@ -143,12 +153,23 @@ Route::middleware(['auth', 'role:ventas,admin'])
     ->prefix('admin/sales')
     ->name('admin.sales.')
     ->group(function () {
-        Route::get('/',           [SalesDashboardController::class,  'index'])->name('index');
-        Route::get('/pipeline',   [SalesPipelineController::class,   'index'])->name('pipeline');
-        Route::get('/clients',    [SalesClientsController::class,    'index'])->name('clients');
-        Route::get('/executives', [SalesExecutivesController::class, 'index'])->name('executives');
-        Route::get('/reassign',   [SalesReassignController::class,   'index'])->name('reassign');
-        Route::post('/reassign/export', [SalesReassignController::class, 'export'])->name('reassign.export');
+        Route::get('/',                [SalesDashboardController::class,  'index'])->name('index');
+        Route::get('/pipeline',        [SalesPipelineController::class,   'index'])->name('pipeline');
+        Route::get('/clients',         [SalesClientsController::class,    'index'])->name('clients');
+        Route::get('/executives',      [SalesExecutivesController::class, 'index'])->name('executives');
+        Route::get('/executives/{id}', [SalesExecutivesController::class, 'show'])->name('executives.show');
+        Route::get('/reassign',        [SalesReassignController::class,   'index'])->name('reassign');
+        Route::post('/reassign/export',[SalesReassignController::class,   'export'])->name('reassign.export');
     });
+
+// 2FA Setup (primera vez)
+Route::middleware('auth')->group(function () {
+    Route::get('/2fa/setup',    [TwoFactorController::class, 'setup'])->name('2fa.setup');
+    Route::post('/2fa/setup',   [TwoFactorController::class, 'confirmSetup'])->name('2fa.setup.confirm');
+});
+
+// 2FA Verify (cada login)
+Route::get('/2fa/verify',   [TwoFactorController::class, 'verify'])->name('2fa.verify');
+Route::post('/2fa/verify',  [TwoFactorController::class, 'validateCode'])->name('2fa.validate');
 
 require __DIR__.'/auth.php';

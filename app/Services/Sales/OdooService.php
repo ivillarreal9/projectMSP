@@ -78,7 +78,6 @@ class OdooService
             $won           = $this->execute('crm.lead', 'search_count',
                 [[['type', '=', 'opportunity'], ['stage_id.is_won', '=', true]]]) ?? 0;
 
-            // En riesgo: clientes sin factura en los últimos 60 días
             $cutoff    = now()->subDays(60)->format('Y-m-d');
             $recentIds = $this->getPartnerIdsWithInvoiceSince($cutoff);
 
@@ -149,9 +148,6 @@ class OdooService
 
     // ── Clientes — account.move ───────────────────────────────
 
-    /**
-     * Partner IDs con al menos una factura confirmada desde $since.
-     */
     public function getPartnerIdsWithInvoiceSince(string $since): array
     {
         $cacheKey = "odoo:invoice:partners:{$since}";
@@ -175,9 +171,6 @@ class OdooService
         });
     }
 
-    /**
-     * Mapa [partner_id => última invoice_date] para una lista de IDs.
-     */
     public function getLastInvoiceDateByPartners(array $partnerIds): array
     {
         if (empty($partnerIds)) return [];
@@ -212,10 +205,6 @@ class OdooService
         });
     }
 
-    /**
-     * Todos los partner IDs del segmento (sin paginar).
-     * Se usa para calcular KPIs globales de riesgo en SalesClientsController.
-     */
     public function getAllClientIds(?string $ejecutivaId = ''): array
     {
         $ejecutivaId = $ejecutivaId ?? '';
@@ -239,9 +228,6 @@ class OdooService
         });
     }
 
-    /**
-     * Cartera paginada. Solo campos seguros (sin date_last_invoice).
-     */
     public function getClientsPaginated(?string $ejecutivaId = '', int $limit = 50, int $offset = 0): array
     {
         $ejecutivaId = $ejecutivaId ?? '';
@@ -388,6 +374,69 @@ class OdooService
                 [[['user_id', '=', $userId], ['customer_rank', '>', 0], ['activity_date_deadline', '=', false]]]) ?? 0;
 
             return compact('leads', 'won', 'pipeline', 'noContact');
+        });
+    }
+
+    // ── Detalle ejecutiva — oportunidades CRM ─────────────────
+
+    public function getOpportunitiesByExecutive(int $userId, int $limit = 20): array
+    {
+        $cacheKey = "odoo:opportunities:exec:{$userId}";
+
+        return Cache::remember($cacheKey, self::CACHE_KPI, function () use ($userId, $limit) {
+            return $this->execute('crm.lead', 'search_read',
+                [[
+                    ['user_id', '=', $userId],
+                    ['type',    '=', 'opportunity'],
+                    ['active',  '=', true],
+                ]],
+                [
+                    'fields' => [
+                        'name',
+                        'partner_id',
+                        'stage_id',
+                        'expected_revenue',
+                        'probability',
+                        'date_deadline',
+                    ],
+                    'order' => 'probability desc',
+                    'limit' => $limit,
+                ]
+            ) ?? [];
+        });
+    }
+
+    // ── Detalle ejecutiva — actividades recientes ─────────────
+
+    public function getActivitiesByExecutive(int $userId, int $limit = 15): array
+    {
+        $cacheKey = "odoo:activities:exec:{$userId}";
+
+        return Cache::remember($cacheKey, self::CACHE_KPI, function () use ($userId, $limit) {
+            $raw = $this->execute('mail.activity', 'search_read',
+                [[
+                    ['user_id', '=', $userId],
+                ]],
+                [
+                    'fields' => [
+                        'summary',
+                        'activity_type_id',
+                        'date_deadline',
+                        'note',
+                        'res_name',
+                    ],
+                    'order' => 'date_deadline desc',
+                    'limit' => $limit,
+                ]
+            ) ?? [];
+
+            // Normalizar activity_type para que la vista lo encuentre en $act['activity_type']
+            return collect($raw)->map(function ($act) {
+                $act['activity_type'] = is_array($act['activity_type_id'])
+                    ? $act['activity_type_id'][1]
+                    : ($act['activity_type_id'] ?? 'Actividad');
+                return $act;
+            })->all();
         });
     }
 

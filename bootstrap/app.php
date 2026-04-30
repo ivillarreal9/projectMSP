@@ -17,6 +17,9 @@ return Application::configure(basePath: dirname(__DIR__))
             'module' => \App\Http\Middleware\CheckModuleAccess::class,
         ]);
         $middleware->statefulApi();
+
+        // 2FA Obligatorio — se aplica a todas las rutas web autenticadas
+        $middleware->appendToGroup('web', \App\Http\Middleware\TwoFactorMiddleware::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //
