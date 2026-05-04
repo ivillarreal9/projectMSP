@@ -10,6 +10,7 @@ class SalesOverviewController extends Controller
 {
     public function index(OdooService $odoo)
     {
+        
         $year  = (int) request('year',  now()->year);
         $month = (int) request('month', now()->month);
 

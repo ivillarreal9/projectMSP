@@ -59,6 +59,7 @@ class SalesExecutivesController extends Controller
 
     public function show(OdooService $odoo, int $id)
     {
+        
         $executives = $odoo->getExecutives();
         $base       = collect($executives)->firstWhere('id', $id);
 
