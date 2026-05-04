@@ -4,16 +4,26 @@ namespace App\Http\Controllers\Admin\Sales;
 
 use App\Http\Controllers\Controller;
 use App\Services\Sales\OdooService;
+use Carbon\Carbon;
 
 class SalesExecutivesController extends Controller
 {
     public function index(OdooService $odoo)
     {
+        // ── Período seleccionado ──────────────────────────────
+        $year  = (int) request('year',  now()->year);
+        $month = (int) request('month', now()->month);
+
+        $dateFrom = Carbon::create($year, $month, 1)->startOfMonth()->format('Y-m-d H:i:s');
+        $dateTo   = Carbon::create($year, $month, 1)->endOfMonth()->format('Y-m-d H:i:s');
+
+        $availableYears = range(now()->year, now()->year - 3);
+
+        // ── Ejecutivas con métricas filtradas ─────────────────
         $executives = $odoo->getExecutives();
 
-        $executives = collect($executives)->map(function ($exec) use ($odoo) {
-            $metrics = $odoo->getMetricsByExecutive($exec['id']);
-
+        $executives = collect($executives)->map(function ($exec) use ($odoo, $dateFrom, $dateTo) {
+            $metrics    = $odoo->getMetricsByExecutive($exec['id'], $dateFrom, $dateTo);
             $totalOport = ($metrics['leads'] ?? 0) + ($metrics['won'] ?? 0);
             $winRate    = $totalOport > 0
                 ? round(($metrics['won'] / $totalOport) * 100, 1)
@@ -25,6 +35,7 @@ class SalesExecutivesController extends Controller
             ]);
         })->values()->all();
 
+        // ── KPIs globales del equipo ──────────────────────────
         $totalLeads     = collect($executives)->sum('leads');
         $totalWon       = collect($executives)->sum('won');
         $totalPipeline  = collect($executives)->sum('pipeline');
@@ -40,20 +51,27 @@ class SalesExecutivesController extends Controller
             'totalPipeline',
             'totalNoContact',
             'teamWinRate',
+            'year',
+            'month',
+            'availableYears',
         ));
     }
 
     public function show(OdooService $odoo, int $id)
     {
-        // Busca al ejecutivo en la lista
         $executives = $odoo->getExecutives();
-
-        $base = collect($executives)->firstWhere('id', $id);
+        $base       = collect($executives)->firstWhere('id', $id);
 
         abort_if(!$base, 404, 'Ejecutiva no encontrada.');
 
-        // Métricas
-        $metrics    = $odoo->getMetricsByExecutive($id);
+        // Heredar período desde query string
+        $year  = (int) request('year',  now()->year);
+        $month = (int) request('month', now()->month);
+
+        $dateFrom = Carbon::create($year, $month, 1)->startOfMonth()->format('Y-m-d H:i:s');
+        $dateTo   = Carbon::create($year, $month, 1)->endOfMonth()->format('Y-m-d H:i:s');
+
+        $metrics    = $odoo->getMetricsByExecutive($id, $dateFrom, $dateTo);
         $totalOport = ($metrics['leads'] ?? 0) + ($metrics['won'] ?? 0);
         $winRate    = $totalOport > 0
             ? round(($metrics['won'] / $totalOport) * 100, 1)
@@ -64,8 +82,6 @@ class SalesExecutivesController extends Controller
             'total_oport' => $totalOport,
         ]);
 
-        // Datos extra — si OdooService los tiene, úsalos; si no, quedan vacíos
-        // y la vista muestra el estado vacío elegantemente
         if (method_exists($odoo, 'getOpportunitiesByExecutive')) {
             $exec['opportunities'] = $odoo->getOpportunitiesByExecutive($id);
         }
@@ -74,6 +90,6 @@ class SalesExecutivesController extends Controller
             $exec['activities'] = $odoo->getActivitiesByExecutive($id);
         }
 
-        return view('admin.sales.executives.show', compact('exec'));
+        return view('admin.sales.executives.show', compact('exec', 'year', 'month'));
     }
 }

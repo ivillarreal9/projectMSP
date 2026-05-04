@@ -35,11 +35,14 @@ class GlpiService
             return $cached;
         }
 
-        $response = Http::withHeaders([
-            'Authorization' => "user_token {$this->userToken}",
-            'App-Token'     => $this->appToken,
-            'Content-Type'  => 'application/json',
-        ])->get("{$this->baseUrl}/initSession");
+        $response = Http::withoutVerifying()
+            ->withHeaders([
+                'App-Token'    => $this->appToken,
+                'Content-Type' => 'application/json',
+            ])->withBasicAuth(
+                config('glpi.user'),
+                config('glpi.password')
+            )->get("{$this->baseUrl}/initSession");
 
         if ($response->failed()) {
             throw new Exception('GLPI: No se pudo iniciar sesión. ' . $response->body());
@@ -61,11 +64,12 @@ class GlpiService
         $token = Cache::get('glpi_session_token');
         if (!$token) return;
 
-        Http::withHeaders([
-            'App-Token'     => $this->appToken,
-            'Session-Token' => $token,
-            'Content-Type'  => 'application/json',
-        ])->get("{$this->baseUrl}/killSession");
+        Http::withoutVerifying()
+            ->withHeaders([
+                'App-Token'     => $this->appToken,
+                'Session-Token' => $token,
+                'Content-Type'  => 'application/json',
+            ])->get("{$this->baseUrl}/killSession");
 
         Cache::forget('glpi_session_token');
         $this->sessionToken = null;
@@ -91,6 +95,16 @@ class GlpiService
     public function getActiveEntities(): array
     {
         return $this->get('/getActiveEntities');
+    }
+
+    /**
+     * Alias usado por GlpiController en create() y edit().
+     * Devuelve lista plana de entidades accesibles por el usuario.
+     */
+    public function getEntities(): array
+    {
+        $response = $this->get('/getMyEntities', ['is_recursive' => true]);
+        return $response['myentities'] ?? (isset($response[0]) ? $response : []);
     }
 
     // ─────────────────────────────────────────────
@@ -148,14 +162,13 @@ class GlpiService
     }
 
     /**
-     * curl: GET /search/AllAssets/?criteria[0][field]=31&...
+     * curl: GET /search/{itemtype}/?criteria[0][field]=1&...
      *
      * Búsqueda avanzada. Soporta 'AllAssets' y cualquier itemtype.
      *
      * Ejemplo de $criteria:
      * [
-     *   ['field' => 31, 'searchtype' => 'contains', 'value' => 'En De'],
-     *   ['field' => 49, 'searchtype' => 'contains', 'value' => 'Servicios Especiales'],
+     *   ['field' => 1, 'searchtype' => 'contains', 'value' => 'switch'],
      * ]
      */
     public function searchItems(string $itemtype = 'AllAssets', array $criteria = [], array $params = []): array
@@ -170,7 +183,7 @@ class GlpiService
         $query = array_merge($defaults, $params);
 
         // Construir criteria como query params planos
-        // Ej: criteria[0][field]=31&criteria[0][searchtype]=contains&criteria[0][value]=En De
+        // Ej: criteria[0][field]=1&criteria[0][searchtype]=contains&criteria[0][value]=switch
         foreach ($criteria as $i => $criterion) {
             $query["criteria[{$i}][field]"]      = $criterion['field'];
             $query["criteria[{$i}][searchtype]"] = $criterion['searchtype'] ?? 'contains';
@@ -187,7 +200,7 @@ class GlpiService
     }
 
     // ─────────────────────────────────────────────
-    // WRITE (POST / PUT)
+    // WRITE (POST / PUT / DELETE)
     // ─────────────────────────────────────────────
 
     /**
@@ -206,6 +219,19 @@ class GlpiService
     public function updateItem(string $itemtype, int $id, array $data): array
     {
         return $this->put("/{$itemtype}/{$id}", ['input' => $data]);
+    }
+
+    /**
+     * curl: DELETE /{itemtype}/{id}
+     * Elimina un item existente.
+     */
+    public function deleteItem(string $itemtype, int $id, bool $purge = false): array
+    {
+        $endpoint = "/{$itemtype}/{$id}";
+        $query    = $purge ? ['purge' => 1] : [];
+
+        $response = $this->request('DELETE', $endpoint, $query);
+        return $response['data'] ?? [];
     }
 
     // ─────────────────────────────────────────────
@@ -248,6 +274,7 @@ class GlpiService
     /**
      * Ejecuta la request HTTP.
      * Reintenta una vez automáticamente si el token expiró (401).
+     * withoutVerifying() deshabilita SSL verify para certificados autofirmados/internos.
      */
     protected function request(
         string $method,
@@ -258,14 +285,17 @@ class GlpiService
     ): array {
         $token = $this->getSessionToken();
 
-        $http = Http::withHeaders($this->headers($token));
-        $url  = $this->baseUrl . $endpoint;
+        $http = Http::withoutVerifying()
+                    ->withHeaders($this->headers($token));
+
+        $url = $this->baseUrl . $endpoint;
 
         $response = match (strtoupper($method)) {
-            'GET'  => $http->get($url, $query),
-            'POST' => $http->post($url, $body),
-            'PUT'  => $http->put($url, $body),
-            default => throw new Exception("Método HTTP no soportado: {$method}"),
+            'GET'    => $http->get($url, $query),
+            'POST'   => $http->post($url, $body),
+            'PUT'    => $http->put($url, $body),
+            'DELETE' => $http->delete($url, empty($query) ? [] : $query),
+            default  => throw new Exception("Método HTTP no soportado: {$method}"),
         };
 
         // Token expirado → refrescar y reintentar una vez

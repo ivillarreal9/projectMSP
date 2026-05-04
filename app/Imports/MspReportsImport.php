@@ -27,76 +27,128 @@ class MspReportsImport implements ToModel, WithHeadingRow, WithChunkReading, Ski
 
     public function model(array $row): ?MspReport
     {
-        if (empty($row['customername']) && empty($row['ticket_number'])) {
+        // ─── Sanitizar TODOS los campos antes de usarlos ───────────────────────
+
+        // Enteros
+        $ticketNumber = $this->toInt($row['ticket_number'] ?? null);
+
+        // Strings
+        $customerName        = $this->toStr($row['customername'] ?? null);
+        $locationName        = $this->toStr($row['locationname'] ?? null);
+        $ticketTitle         = $this->toStr($row['tickettitle'] ?? null);
+        $ticketType          = $this->toStr($row['tickettype'] ?? null);
+        $semanaRaw           = $this->toStr($row['semana'] ?? null);
+        $mesCierreRaw        = $this->toStr($row['mes_cierre'] ?? null);
+        $tipoTicket          = $this->toStr($row['tipo_de_ticket'] ?? null);
+        $causaDano           = $this->toStr($row['causa_de_dano'] ?? null);
+        $solucion            = $this->toStr($row['solucion'] ?? null);
+        $detalle             = $this->toStr($row['detalle'] ?? null);
+        $tipoCliente         = $this->toStr($row['tipo_de_cliente'] ?? null);
+        $ubicacionHopsa      = $this->toStr($row['ubicacion_hopsa'] ?? null);
+        $solucionDefinitiva  = $this->toStr($row['solucion_definitiva_recomendacion'] ?? null);
+        $tipoReporte         = $this->toStr($row['tipo_de_reporte'] ?? null);
+        $emailCliente        = $this->toStr($row['email_cliente'] ?? null);
+        $logoPath            = $this->toStr($row['logo_path'] ?? null);
+        $numeroCuenta        = $this->toStr($row['orden'] ?? null);
+
+        // Normalizado (lowercase + trim)
+        $clasificacionEventos = $this->normalizeText($row['clasificacion_de_eventos'] ?? null);
+
+        // Saltar fila si no tiene datos mínimos
+        if (!$ticketNumber && empty($customerName)) {
             return null;
         }
 
+        // ─── Fechas ────────────────────────────────────────────────────────────
         $fechaCreacion = $this->resolveDate($row['fecha_de_creacion'] ?? null);
         $fechaCierre   = $this->resolveDate($row['fecha_de_cierre'] ?? null);
 
+        // ─── Tiempo de vida ────────────────────────────────────────────────────
         $tiempoVida = null;
-        $rawTiempo = $row['tiempo_de_vida_del_ticket'] ?? null;
+        $rawTiempo  = $row['tiempo_de_vida_del_ticket'] ?? null;
         if (is_numeric($rawTiempo)) {
-            $tiempoVida = round((float)$rawTiempo, 4);
+            $tiempoVida = round((float) $rawTiempo, 4);
         } elseif ($fechaCreacion && $fechaCierre) {
             $tiempoVida = round($fechaCreacion->diffInSeconds($fechaCierre) / 86400, 4);
         }
 
-        $semana = $row['semana'] ?? null;
-        if ($semana && str_starts_with((string)$semana, '=')) {
+        // ─── Semana ────────────────────────────────────────────────────────────
+        $semana = $semanaRaw;
+        if ($semana && str_starts_with($semana, '=')) {
             $semana = $fechaCierre ? 'S' . $fechaCierre->weekOfYear : null;
         }
 
-        $mesCierre = $row['mes_cierre'] ?? null;
-        if ($mesCierre && str_starts_with((string)$mesCierre, '=')) {
+        // ─── Mes cierre ────────────────────────────────────────────────────────
+        $mesCierre = $mesCierreRaw;
+        if ($mesCierre && str_starts_with($mesCierre, '=')) {
             $mesCierre = $fechaCierre ? ucfirst($fechaCierre->translatedFormat('F')) : null;
         }
 
-        $customerName = isset($row['customername']) ? trim($row['customername']) : null;
-
-        // Período derivado de fecha de cierre — no del input manual
+        // ─── Período derivado de fecha de cierre ───────────────────────────────
         $periodo = $fechaCierre
             ? ucfirst($fechaCierre->translatedFormat('F Y'))
             : $this->periodo;
 
-        // Crear cliente en msp_clients si no existe
+        // ─── Crear cliente si no existe ────────────────────────────────────────
         if ($customerName) {
             \App\Models\MspClient::firstOrCreate(
                 ['customer_name' => $customerName]
             );
         }
 
-        // Upsert por ticket_number único — evita duplicados
+        // ─── Upsert ────────────────────────────────────────────────────────────
         MspReport::updateOrCreate(
-            ['ticket_number' => $row['ticket_number'] ?? null],
+            ['ticket_number' => $ticketNumber],
             [
                 'customer_name'         => $customerName,
-                'location_name'         => isset($row['locationname']) ? trim($row['locationname']) : null,
-                'ticket_title'          => $row['tickettitle'] ?? null,
-                'ticket_type'           => $row['tickettype'] ?? null,
+                'location_name'         => $locationName,
+                'ticket_title'          => $ticketTitle,
+                'ticket_type'           => $ticketType,
                 'fecha_creacion'        => $fechaCreacion,
                 'fecha_cierre'          => $fechaCierre,
                 'tiempo_vida_ticket'    => $tiempoVida,
                 'semana'                => $semana,
                 'mes_cierre'            => $mesCierre,
-                'tipo_ticket'           => isset($row['tipo_de_ticket']) ? trim($row['tipo_de_ticket']) : null,
-                'clasificacion_eventos' => $this->normalizeText($row['clasificacion_de_eventos'] ?? null),
-                'causa_dano'            => isset($row['causa_de_dano']) ? trim($row['causa_de_dano']) : null,
-                'solucion'              => isset($row['solucion']) ? trim($row['solucion']) : null,
-                'detalle'               => $row['detalle'] ?? null,
-                'tipo_cliente'          => isset($row['tipo_de_cliente']) ? trim($row['tipo_de_cliente']) : null,
-                'ubicacion_hopsa'       => $row['ubicacion_hopsa'] ?? null,
-                'solucion_definitiva'   => $row['solucion_definitiva_recomendacion'] ?? null,
-                'tipo_reporte'          => $row['tipo_de_reporte'] ?? null,
-                'email_cliente'         => $row['email_cliente'] ?? null,
-                'logo_path'             => $row['logo_path'] ?? null,
-                'batch_id'              => $this->batchId, // ← agregar
+                'tipo_ticket'           => $tipoTicket,
+                'clasificacion_eventos' => $clasificacionEventos,
+                'causa_dano'            => $causaDano,
+                'solucion'              => $solucion,
+                'detalle'               => $detalle,
+                'tipo_cliente'          => $tipoCliente,
+                'ubicacion_hopsa'       => $ubicacionHopsa,
+                'solucion_definitiva'   => $solucionDefinitiva,
+                'tipo_reporte'          => $tipoReporte,
+                'email_cliente'         => $emailCliente,
+                'logo_path'             => $logoPath,
+                'numero_cuenta'         => $numeroCuenta,
+                'batch_id'              => $this->batchId,
                 'periodo'               => $periodo,
-
             ]
         );
 
         return null;
+    }
+
+    // ─── Helpers de sanitización ───────────────────────────────────────────────
+
+    /**
+     * Convierte a string limpio, retorna null si está vacío.
+     */
+    private function toStr(mixed $value): ?string
+    {
+        if ($value === null) return null;
+        $clean = trim((string) $value);
+        return $clean !== '' ? $clean : null;
+    }
+
+    /**
+     * Convierte a entero, retorna null si no es numérico.
+     */
+    private function toInt(mixed $value): ?int
+    {
+        if ($value === null) return null;
+        $clean = trim((string) $value);
+        return ($clean !== '' && is_numeric($clean)) ? (int) $clean : null;
     }
 
     /**
@@ -106,7 +158,6 @@ class MspReportsImport implements ToModel, WithHeadingRow, WithChunkReading, Ski
     private function normalizeText(mixed $value): ?string
     {
         if ($value === null || $value === '') return null;
-        // Minúsculas, sin espacios al inicio/fin, y múltiples espacios internos a uno solo
         return preg_replace('/\s+/', ' ', trim(mb_strtolower((string) $value)));
     }
 
@@ -114,20 +165,17 @@ class MspReportsImport implements ToModel, WithHeadingRow, WithChunkReading, Ski
     {
         if (!$value) return null;
 
-        // Si ya es un objeto Carbon/DateTime
         if ($value instanceof \DateTime) {
             return \Carbon\Carbon::instance($value);
         }
 
-        // Si es número serial de Excel
         if (is_numeric($value)) {
             try {
-                $date = ExcelDate::excelToDateTimeObject((float)$value);
+                $date = ExcelDate::excelToDateTimeObject((float) $value);
                 return \Carbon\Carbon::instance($date);
             } catch (\Throwable) {}
         }
 
-        // Si es string de fecha
         try {
             return \Carbon\Carbon::parse($value);
         } catch (\Throwable) {

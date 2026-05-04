@@ -359,19 +359,38 @@ class OdooService
         });
     }
 
-    public function getMetricsByExecutive(int $userId): array
+    public function getMetricsByExecutive(int $userId, ?string $dateFrom = null, ?string $dateTo = null): array
     {
-        $cacheKey = "odoo:metrics:exec:{$userId}";
+        // La clave incluye las fechas para que cada período tenga su propio caché
+        $cacheKey = "odoo:metrics:exec:{$userId}:{$dateFrom}:{$dateTo}";
 
-        return Cache::remember($cacheKey, self::CACHE_KPI, function () use ($userId) {
-            $leads     = $this->execute('crm.lead', 'search_count',
-                [[['user_id', '=', $userId], ['type', '=', 'lead']]]) ?? 0;
-            $won       = $this->execute('crm.lead', 'search_count',
-                [[['user_id', '=', $userId], ['stage_id.is_won', '=', true]]]) ?? 0;
-            $pipeline  = $this->execute('sale.order', 'search_count',
-                [[['user_id', '=', $userId], ['state', 'in', ['draft', 'sent']]]]) ?? 0;
+        return Cache::remember($cacheKey, self::CACHE_KPI, function () use ($userId, $dateFrom, $dateTo) {
+
+            // Leads — filtro por create_date
+            $domainLeads = [['user_id', '=', $userId], ['type', '=', 'lead']];
+            if ($dateFrom) $domainLeads[] = ['create_date', '>=', $dateFrom];
+            if ($dateTo)   $domainLeads[] = ['create_date', '<=', $dateTo];
+            $leads = $this->execute('crm.lead', 'search_count', [$domainLeads]) ?? 0;
+
+            // Ganadas — filtro por date_closed
+            $domainWon = [['user_id', '=', $userId], ['stage_id.is_won', '=', true]];
+            if ($dateFrom) $domainWon[] = ['date_closed', '>=', $dateFrom];
+            if ($dateTo)   $domainWon[] = ['date_closed', '<=', $dateTo];
+            $won = $this->execute('crm.lead', 'search_count', [$domainWon]) ?? 0;
+
+            // Pipeline — filtro por date_order
+            $domainPipeline = [['user_id', '=', $userId], ['state', 'in', ['draft', 'sent']]];
+            if ($dateFrom) $domainPipeline[] = ['date_order', '>=', $dateFrom];
+            if ($dateTo)   $domainPipeline[] = ['date_order', '<=', $dateTo];
+            $pipeline = $this->execute('sale.order', 'search_count', [$domainPipeline]) ?? 0;
+
+            // Sin contacto — siempre estado actual, sin filtro de fecha
             $noContact = $this->execute('res.partner', 'search_count',
-                [[['user_id', '=', $userId], ['customer_rank', '>', 0], ['activity_date_deadline', '=', false]]]) ?? 0;
+                [[
+                    ['user_id',                '=',    $userId],
+                    ['customer_rank',          '>',    0],
+                    ['activity_date_deadline', '=',    false],
+                ]]) ?? 0;
 
             return compact('leads', 'won', 'pipeline', 'noContact');
         });
@@ -441,7 +460,6 @@ class OdooService
     }
 
     // ── Invalidar caché ───────────────────────────────────────
-
     public function clearCache(): void
     {
         $keys = [
@@ -453,5 +471,150 @@ class OdooService
         foreach ($keys as $key) {
             Cache::forget($key);
         }
+    }
+
+    public function getDashboardKpis(string $dateFrom, string $dateTo): array
+    {
+        $cacheKey = "odoo:dashboard:kpis:{$dateFrom}:{$dateTo}";
+ 
+        return \Illuminate\Support\Facades\Cache::remember($cacheKey, self::CACHE_KPI, function () use ($dateFrom, $dateTo) {
+ 
+            // Leads creados en el período
+            $leads = $this->execute('crm.lead', 'search_count', [[
+                ['type',        '=',  'lead'],
+                ['create_date', '>=', $dateFrom],
+                ['create_date', '<=', $dateTo],
+            ]]) ?? 0;
+ 
+            // Oportunidades ganadas en el período
+            $won = $this->execute('crm.lead', 'search_count', [[
+                ['stage_id.is_won', '=',  true],
+                ['date_closed',     '>=', $dateFrom],
+                ['date_closed',     '<=', $dateTo],
+            ]]) ?? 0;
+ 
+            // Monto de oportunidades ganadas (expected_revenue)
+            $wonLeads = $this->execute('crm.lead', 'search_read', [[
+                ['stage_id.is_won', '=',  true],
+                ['date_closed',     '>=', $dateFrom],
+                ['date_closed',     '<=', $dateTo],
+            ]], ['fields' => ['expected_revenue'], 'limit' => 0]) ?? [];
+            $revenueWon = collect($wonLeads)->sum('expected_revenue');
+ 
+            // Monto de órdenes de venta en el período
+            $orders = $this->execute('sale.order', 'search_read', [[
+                ['state',      'in', ['sale', 'done']],
+                ['date_order', '>=', $dateFrom],
+                ['date_order', '<=', $dateTo],
+            ]], ['fields' => ['amount_total'], 'limit' => 0]) ?? [];
+            $revenueOrders = collect($orders)->sum('amount_total');
+ 
+            // Win rate del período
+            $totalOport = $leads + $won;
+            $winRate    = $totalOport > 0 ? round(($won / $totalOport) * 100, 1) : 0;
+ 
+            return compact('leads', 'won', 'revenueWon', 'revenueOrders', 'winRate');
+        });
+    }
+ 
+    // ── Dashboard — tendencia mensual del año ─────────────────
+ 
+    public function getMonthlyTrend(int $year): array
+    {
+        $cacheKey = "odoo:dashboard:monthly:{$year}";
+ 
+        return \Illuminate\Support\Facades\Cache::remember($cacheKey, self::CACHE_KPI, function () use ($year) {
+            $months = [];
+ 
+            for ($m = 1; $m <= 12; $m++) {
+                $from = \Carbon\Carbon::create($year, $m, 1)->startOfMonth()->format('Y-m-d H:i:s');
+                $to   = \Carbon\Carbon::create($year, $m, 1)->endOfMonth()->format('Y-m-d H:i:s');
+ 
+                $leads = $this->execute('crm.lead', 'search_count', [[
+                    ['type',        '=',  'lead'],
+                    ['create_date', '>=', $from],
+                    ['create_date', '<=', $to],
+                ]]) ?? 0;
+ 
+                $won = $this->execute('crm.lead', 'search_count', [[
+                    ['stage_id.is_won', '=',  true],
+                    ['date_closed',     '>=', $from],
+                    ['date_closed',     '<=', $to],
+                ]]) ?? 0;
+ 
+                $wonLeads = $this->execute('crm.lead', 'search_read', [[
+                    ['stage_id.is_won', '=',  true],
+                    ['date_closed',     '>=', $from],
+                    ['date_closed',     '<=', $to],
+                ]], ['fields' => ['expected_revenue'], 'limit' => 0]) ?? [];
+                $revenue = collect($wonLeads)->sum('expected_revenue');
+ 
+                $months[] = [
+                    'month'   => $m,
+                    'label'   => \Carbon\Carbon::create($year, $m)->translatedFormat('M'),
+                    'leads'   => $leads,
+                    'won'     => $won,
+                    'revenue' => $revenue,
+                ];
+            }
+ 
+            return $months;
+        });
+    }
+ 
+    // ── Dashboard — stats por ejecutiva en el período ─────────
+ 
+    public function getStatsByExecutive(string $dateFrom, string $dateTo): array
+    {
+        $cacheKey = "odoo:dashboard:byexec:{$dateFrom}:{$dateTo}";
+ 
+        return \Illuminate\Support\Facades\Cache::remember($cacheKey, self::CACHE_KPI, function () use ($dateFrom, $dateTo) {
+            $ids = config('sales.executive_ids', []);
+            if (empty($ids)) return [];
+ 
+            $executives = $this->execute('res.users', 'search_read',
+                [[['id', 'in', $ids]]],
+                ['fields' => ['id', 'name', 'image_128'], 'limit' => 50]
+            ) ?? [];
+ 
+            return collect($executives)->map(function ($exec) use ($dateFrom, $dateTo) {
+                $userId = $exec['id'];
+ 
+                $won = $this->execute('crm.lead', 'search_count', [[
+                    ['user_id',         '=',  $userId],
+                    ['stage_id.is_won', '=',  true],
+                    ['date_closed',     '>=', $dateFrom],
+                    ['date_closed',     '<=', $dateTo],
+                ]]) ?? 0;
+ 
+                $leads = $this->execute('crm.lead', 'search_count', [[
+                    ['user_id',     '=',  $userId],
+                    ['type',        '=',  'lead'],
+                    ['create_date', '>=', $dateFrom],
+                    ['create_date', '<=', $dateTo],
+                ]]) ?? 0;
+ 
+                $wonLeads = $this->execute('crm.lead', 'search_read', [[
+                    ['user_id',         '=',  $userId],
+                    ['stage_id.is_won', '=',  true],
+                    ['date_closed',     '>=', $dateFrom],
+                    ['date_closed',     '<=', $dateTo],
+                ]], ['fields' => ['expected_revenue'], 'limit' => 0]) ?? [];
+                $revenue = collect($wonLeads)->sum('expected_revenue');
+ 
+                $total   = $leads + $won;
+                $winRate = $total > 0 ? round(($won / $total) * 100, 1) : 0;
+ 
+                return [
+                    'id'       => $userId,
+                    'name'     => $exec['name'],
+                    'image'    => $exec['image_128'] ?? null,
+                    'leads'    => $leads,
+                    'won'      => $won,
+                    'revenue'  => $revenue,
+                    'win_rate' => $winRate,
+                ];
+            })->sortByDesc('revenue')->values()->all();
+        });
     }
 }
