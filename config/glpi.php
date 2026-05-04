@@ -10,6 +10,8 @@ return [
     'base_url'   => env('GLPI_BASE_URL'),
     'app_token'  => env('GLPI_APP_TOKEN'),
     'user_token' => env('GLPI_USER_TOKEN'),
+    'user'     => env('GLPI_USER'),
+    'password' => env('GLPI_PASSWORD'),
 
     /*
     | Tipos de activos soportados

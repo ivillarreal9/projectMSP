@@ -7,6 +7,7 @@ use App\Http\Controllers\Admin\ApiMspController;
 use App\Http\Controllers\Admin\Meta2Controller;
 use App\Http\Controllers\Admin\Sales\SalesDashboardController;
 use App\Http\Controllers\Admin\Sales\SalesPipelineController;
+use App\Http\Controllers\Admin\Sales\SalesOverviewController;
 use App\Http\Controllers\Admin\ApiCustomersController;
 use App\Http\Controllers\Admin\Sales\SalesClientsController;
 use App\Http\Controllers\Admin\Sales\SalesExecutivesController;
@@ -160,6 +161,7 @@ Route::middleware(['auth', 'role:ventas,admin'])
         Route::get('/executives/{id}', [SalesExecutivesController::class, 'show'])->name('executives.show');
         Route::get('/reassign',        [SalesReassignController::class,   'index'])->name('reassign');
         Route::post('/reassign/export',[SalesReassignController::class,   'export'])->name('reassign.export');
+        Route::get('/overview', [SalesOverviewController::class, 'index'])->name('overview');
     });
 
 // 2FA Setup (primera vez)

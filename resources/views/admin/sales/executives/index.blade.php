@@ -18,12 +18,89 @@
 
             @include('admin.sales.partials.nav')
 
-            {{-- ── TÍTULO ──────────────────────────────────── --}}
-            <div>
-                <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100">Ejecutivas de Ventas</h1>
-                <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                    Ovnicom · {{ count($executives) }} ejecutivas · actualizado {{ now()->format('d/m/Y H:i') }}
-                </p>
+            {{-- ── TÍTULO + SELECTOR DE PERÍODO ───────────── --}}
+            @php
+                $isCurrentPeriod = ($year == now()->year && $month == now()->month);
+                $periodoLabel    = \Carbon\Carbon::create($year, $month)->translatedFormat('F Y');
+            @endphp
+
+            <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+                <div>
+                    <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100">Ejecutivas de Ventas</h1>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                        Ovnicom · {{ count($executives) }} ejecutivas · actualizado {{ now()->format('d/m/Y H:i') }}
+                    </p>
+                </div>
+
+                {{-- Selector mes + año --}}
+                <form method="GET" action="{{ route('admin.sales.executives') }}"
+                      class="flex items-center gap-2 flex-wrap">
+
+                    {{-- Mes --}}
+                    <div class="relative">
+                        <select name="month" onchange="this.form.submit()"
+                                class="appearance-none bg-white dark:bg-gray-800
+                                       border border-gray-200 dark:border-gray-700
+                                       text-sm text-gray-700 dark:text-gray-200
+                                       rounded-lg pl-3 pr-8 py-2 cursor-pointer
+                                       focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            @foreach(range(1, 12) as $m)
+                                <option value="{{ $m }}" {{ $month == $m ? 'selected' : '' }}>
+                                    {{ \Carbon\Carbon::create(null, $m)->translatedFormat('F') }}
+                                </option>
+                            @endforeach
+                        </select>
+                        <div class="pointer-events-none absolute inset-y-0 right-2 flex items-center">
+                            <svg class="w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </div>
+                    </div>
+
+                    {{-- Año --}}
+                    <div class="relative">
+                        <select name="year" onchange="this.form.submit()"
+                                class="appearance-none bg-white dark:bg-gray-800
+                                       border border-gray-200 dark:border-gray-700
+                                       text-sm text-gray-700 dark:text-gray-200
+                                       rounded-lg pl-3 pr-8 py-2 cursor-pointer
+                                       focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            @foreach($availableYears as $y)
+                                <option value="{{ $y }}" {{ $year == $y ? 'selected' : '' }}>{{ $y }}</option>
+                            @endforeach
+                        </select>
+                        <div class="pointer-events-none absolute inset-y-0 right-2 flex items-center">
+                            <svg class="w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </div>
+                    </div>
+
+                    {{-- Chip período activo --}}
+                    <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
+                                 {{ $isCurrentPeriod
+                                    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400'
+                                    : 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400' }}">
+                        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                        </svg>
+                        {{ $periodoLabel }}{{ $isCurrentPeriod ? ' · actual' : '' }}
+                    </span>
+
+                    {{-- Botón reset al mes actual --}}
+                    @if(!$isCurrentPeriod)
+                        <a href="{{ route('admin.sales.executives') }}"
+                           class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium
+                                  text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-600
+                                  hover:bg-gray-50 dark:hover:bg-gray-700/50 transition">
+                            <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                            </svg>
+                            Hoy
+                        </a>
+                    @endif
+
+                </form>
             </div>
 
             {{-- ── KPI CARDS DEL EQUIPO ────────────────────── --}}
@@ -133,29 +210,24 @@
 
                     {{-- Métricas en grid --}}
                     <div class="grid grid-cols-2 gap-2">
-
                         <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
                             <p class="text-xs text-gray-400 mb-0.5">Leads</p>
                             <p class="text-xl font-bold text-gray-900 dark:text-gray-100">{{ number_format($exec['leads'] ?? 0) }}</p>
                         </div>
-
                         <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
                             <p class="text-xs text-gray-400 mb-0.5">Ganadas</p>
                             <p class="text-xl font-bold text-emerald-600 dark:text-emerald-400">{{ number_format($exec['won'] ?? 0) }}</p>
                         </div>
-
                         <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
                             <p class="text-xs text-gray-400 mb-0.5">Pipeline</p>
                             <p class="text-xl font-bold text-gray-900 dark:text-gray-100">{{ number_format($exec['pipeline'] ?? 0) }}</p>
                         </div>
-
                         <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
                             <p class="text-xs text-gray-400 mb-0.5">Sin contacto</p>
                             <p class="text-xl font-bold {{ $nc > 10 ? 'text-red-500' : 'text-gray-900 dark:text-gray-100' }}">
                                 {{ number_format($nc) }}
                             </p>
                         </div>
-
                     </div>
 
                     {{-- Win Rate bar --}}
@@ -165,16 +237,15 @@
                             <span class="text-sm font-bold {{ $wrColor }}">{{ $wr }}%</span>
                         </div>
                         <div class="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-1.5">
-                            <div class="h-1.5 rounded-full {{ $wrBg }}"
-                                 style="width: {{ min($wr, 100) }}%"></div>
+                            <div class="h-1.5 rounded-full {{ $wrBg }}" style="width: {{ min($wr, 100) }}%"></div>
                         </div>
                         <p class="text-xs text-gray-400 mt-1">
                             {{ number_format($exec['won'] ?? 0) }} de {{ number_format($exec['total_oport'] ?? 0) }} oportunidades
                         </p>
                     </div>
 
-                    {{-- ── BOTÓN MÁS INFORMACIÓN ── --}}
-                    <a href="{{ route('admin.sales.executives.show', $execId) }}"
+                    {{-- Botón Más información — pasa el período --}}
+                    <a href="{{ route('admin.sales.executives.show', $execId) }}?year={{ $year }}&month={{ $month }}"
                        class="flex items-center justify-center gap-2 w-full px-4 py-2.5
                               rounded-lg border border-gray-200 dark:border-gray-600
                               text-xs font-semibold text-gray-600 dark:text-gray-300
@@ -203,8 +274,14 @@
 
             {{-- ── TABLA COMPARATIVA ───────────────────────── --}}
             <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
-                <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-700">
+                <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
                     <h2 class="text-sm font-semibold text-gray-800 dark:text-gray-100">Comparativa del equipo</h2>
+                    <span class="inline-flex items-center gap-1.5 text-xs text-gray-400">
+                        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                        </svg>
+                        {{ $periodoLabel }}
+                    </span>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="min-w-full">
@@ -216,18 +293,18 @@
                                 <th class="px-6 py-3 text-right  text-xs font-semibold text-gray-400 uppercase tracking-wider">Pipeline</th>
                                 <th class="px-6 py-3 text-right  text-xs font-semibold text-gray-400 uppercase tracking-wider">Sin contacto</th>
                                 <th class="px-6 py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">Win Rate</th>
-                                <th class="px-6 py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider"></th>
+                                <th class="px-6 py-3"></th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-50 dark:divide-gray-700/60">
                             @foreach($executives as $index => $exec)
                             @php
-                                $wr      = $exec['win_rate'] ?? 0;
-                                $wrColor = $wr >= 30 ? 'text-emerald-500' : ($wr >= 15 ? 'text-amber-500' : 'text-red-500');
-                                $wrBg    = $wr >= 30 ? 'bg-emerald-500'   : ($wr >= 15 ? 'bg-amber-500'   : 'bg-red-500');
-                                $nc      = $exec['noContact'] ?? 0;
-                                $color   = $avatarColors[$index % count($avatarColors)];
-                                $ini     = collect(explode(' ', $exec['name']))->take(2)->map(fn($w) => strtoupper(substr($w,0,1)))->join('');
+                                $wr       = $exec['win_rate'] ?? 0;
+                                $wrColor  = $wr >= 30 ? 'text-emerald-500' : ($wr >= 15 ? 'text-amber-500' : 'text-red-500');
+                                $wrBg     = $wr >= 30 ? 'bg-emerald-500'   : ($wr >= 15 ? 'bg-amber-500'   : 'bg-red-500');
+                                $nc       = $exec['noContact'] ?? 0;
+                                $color    = $avatarColors[$index % count($avatarColors)];
+                                $ini      = collect(explode(' ', $exec['name']))->take(2)->map(fn($w) => strtoupper(substr($w,0,1)))->join('');
                                 $hasPhoto = !empty($exec['image_128']) && !str_starts_with($exec['image_128'], 'PD94');
                                 $execId   = $exec['id'] ?? $exec['odoo_id'] ?? $index;
                             @endphp
@@ -272,7 +349,7 @@
                                     </div>
                                 </td>
                                 <td class="px-6 py-3 text-center">
-                                    <a href="{{ route('admin.sales.executives.show', $execId) }}"
+                                    <a href="{{ route('admin.sales.executives.show', $execId) }}?year={{ $year }}&month={{ $month }}"
                                        class="inline-flex items-center gap-1.5 px-3 py-1.5
                                               rounded-lg border border-gray-200 dark:border-gray-600
                                               text-xs font-medium text-gray-500 dark:text-gray-400
