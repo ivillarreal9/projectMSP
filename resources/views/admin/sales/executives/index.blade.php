@@ -348,6 +348,7 @@
                                         <span class="text-sm font-bold {{ $wrColor }} w-10 text-right">{{ $wr }}%</span>
                                     </div>
                                 </td>
+                                
                                 <td class="px-6 py-3 text-center">
                                     <a href="{{ route('admin.sales.executives.show', $execId) }}?year={{ $year }}&month={{ $month }}"
                                        class="inline-flex items-center gap-1.5 px-3 py-1.5

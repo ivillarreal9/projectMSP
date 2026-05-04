@@ -462,6 +462,7 @@ class OdooService
     // ── Invalidar caché ───────────────────────────────────────
     public function clearCache(): void
     {
+        
         $keys = [
             'odoo:kpis',
             'odoo:clients',
