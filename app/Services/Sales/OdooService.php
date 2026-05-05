@@ -618,4 +618,93 @@ class OdooService
             })->sortByDesc('revenue')->values()->all();
         });
     }
+
+    public function getCommissions(
+        string $year,
+        string $month,
+        ?int   $vendedorId = null
+    ): array {
+        $cacheKey = "odoo:commissions:{$year}:{$month}:{$vendedorId}";
+
+        return Cache::remember($cacheKey, self::CACHE_KPI, function () use ($year, $month, $vendedorId) {
+
+            $domain = [
+                ['year_comission', '=',  $year],
+                ['month_comission','=',  $month],
+                ['state', '!=', 'cancel'],
+                ["to_invoice_button_clicked", "=", True],
+            ];
+
+            if ($vendedorId) {
+                $domain[] = ['user_id', '=', $vendedorId];
+            }
+
+            $records = $this->execute('sale.order', 'search_read',
+                [$domain],
+                [
+                    'fields' => [
+                        'name',
+                        'year_comission',
+                        'month_comission',
+                        'state',
+                        'user_id',
+                        'amount_total',
+                        'total_otf',
+                        'total_mrc',
+                        'partner_id',
+                        'date_order',
+                    ],
+                    'order' => 'date_order desc',
+                    'limit' => 0,
+                ]
+            ) ?? [];
+
+            $collection = collect($records);
+
+            $totalOtf = $collection->sum('total_otf');
+            $totalMrc = $collection->sum('total_mrc');
+
+            $byVendedor = $collection
+                ->groupBy(fn($r) => is_array($r['user_id']) ? $r['user_id'][0] : ($r['user_id'] ?: 0))
+                ->map(fn($group) => [
+                    'vendedor_id'   => is_array($group->first()['user_id']) ? $group->first()['user_id'][0] : '—',
+                    'vendedor_name' => is_array($group->first()['user_id']) ? $group->first()['user_id'][1] : '—',
+                    'cantidad'      => $group->count(),
+                    'total_otf'     => $group->sum('total_otf'),
+                    'total_mrc'     => $group->sum('total_mrc'),
+                    'total'         => $group->sum('total_otf') + $group->sum('total_mrc'),
+                ])
+                ->sortByDesc('total')
+                ->values();
+
+            return [
+                'records'     => $records,
+                'cantidad'    => $collection->count(),
+                'total_otf'   => $totalOtf,
+                'total_mrc'   => $totalMrc,
+                'total'       => $totalOtf + $totalMrc,
+                'by_vendedor' => $byVendedor,
+            ];
+        });
+    }
+
+    public function debugCommissions(): array
+    {
+        return $this->execute('sale.order', 'search_read',
+            [[]], // sin filtros
+            [
+                'fields' => [
+                    'name',
+                    'year_comission',
+                    'month_comission',
+                    'to_invoice_button_clicked',
+                    'total_otf',
+                    'total_mrc',
+                    'user_id',
+                ],
+                'limit' => 5,
+                'order' => 'write_date desc', // los más recientemente modificados
+            ]
+        ) ?? [];
+    }
 }
