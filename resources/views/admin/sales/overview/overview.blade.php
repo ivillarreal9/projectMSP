@@ -418,6 +418,7 @@
         });
     }
 
+
     function renderRevLine(){
         destroyChart('revLine');
         charts.revLine=new Chart(document.getElementById('chartRevLine'),{
