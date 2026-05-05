@@ -23,40 +23,49 @@
             @php
                 $isCurrentPeriod = ($year == now()->year && $month == now()->month);
                 $periodoLabel    = \Carbon\Carbon::create($year, $month)->translatedFormat('F Y');
-                $prevMonth       = \Carbon\Carbon::create($year, $month, 1)->subMonth();
-                $prevLabel       = $prevMonth->translatedFormat('F Y');
 
-                // Incluye image en el JSON — se valida para no pasar SVGs vacíos
-                $toJs = fn($col) => collect($col)->sortByDesc('revenue')->values()->map(fn($e) => [
-                    'name'    => $e['name'],
-                    'short'   => collect(explode(' ',$e['name']))->first(),
-                    'initials'=> collect(explode(' ',$e['name']))->take(2)->map(fn($w)=>strtoupper(substr($w,0,1)))->join(''),
-                    'leads'   => $e['leads'], 'won' => $e['won'],
-                    'revenue' => round($e['revenue'],2), 'wr' => $e['win_rate'],
-                    'image'   => (!empty($e['image']) && !str_starts_with($e['image'], 'PD94'))
-                                    ? 'data:image/png;base64,'.$e['image']
-                                    : null,
-                ])->toJson();
+                // Mapa de imágenes por nombre de ejecutiva
+                $execImageMap = collect($byExecutive ?? [])->keyBy('name')->map(
+                    fn($e) => (!empty($e['image']) && !str_starts_with($e['image'], 'PD94'))
+                        ? 'data:image/png;base64,'.$e['image']
+                        : null
+                )->all();
 
-                $jsMonth   = $toJs($byExecutive);
-                $jsYear    = $toJs($byExecutiveYear ?? $byExecutive);
-                $jsPrev    = collect($byExecutivePrev ?? [])->count()
-                    ? collect($byExecutivePrev)->map(fn($e)=>[
-                        'name'=>$e['name'],'revenue'=>round($e['revenue'],2),
-                        'won'=>$e['won'],'leads'=>$e['leads'],'wr'=>$e['win_rate'],
-                      ])->toJson()
-                    : '[]';
-                $jsMonthly = collect($monthlyData ?? [])->map(fn($m)=>[
-                    'label'=>$m['label'],'leads'=>$m['leads'],
-                    'won'=>$m['won'],'revenue'=>round($m['revenue'],2),
-                ])->toJson();
+                $toJsComision = fn($col, string $tipo) =>
+                    collect($col)
+                        ->sortByDesc($tipo)
+                        ->values()
+                        ->map(fn($v) => [
+                            'name'    => $v['vendedor_name'],
+                            'short'   => collect(explode(' ', $v['vendedor_name']))->first(),
+                            'initials'=> collect(explode(' ', $v['vendedor_name']))->take(2)
+                                            ->map(fn($w) => strtoupper(substr($w,0,1)))->join(''),
+                            'revenue' => round($v[$tipo], 2),
+                            'cantidad'=> $v['cantidad'],
+                            'image'   => $execImageMap[$v['vendedor_name']] ?? null,
+                        ])
+                        ->toJson();
+
+                $jsOtf = isset($commissionData) ? $toJsComision($commissionData['by_vendedor'], 'total_otf') : '[]';
+                $jsMrc = isset($commissionData) ? $toJsComision($commissionData['by_vendedor'], 'total_mrc') : '[]';
+
+                $totalOtf    = $commissionData['total_otf']  ?? 0;
+                $totalMrc    = $commissionData['total_mrc']  ?? 0;
+                $totalComis  = $commissionData['total']      ?? 0;
+                $cantidadOrd = $commissionData['cantidad']   ?? 0;
+
+                $periodoComisiones = isset($commissionPeriod)
+                    ? $commissionPeriod->translatedFormat('F Y')
+                    : \Carbon\Carbon::create($year, $month, 1)->subMonth()->translatedFormat('F Y');
             @endphp
 
             {{-- ── TÍTULO + SELECTOR ───────────────────────── --}}
             <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
                 <div>
                     <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100">Competencia de Ventas</h1>
-                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Ovnicom · actualizado {{ now()->format('d/m/Y H:i') }}</p>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                        Ovnicom · comisiones de <span class="font-medium text-gray-700 dark:text-gray-200">{{ $periodoComisiones }}</span> · actualizado {{ now()->format('d/m/Y H:i') }}
+                    </p>
                 </div>
                 <form method="GET" action="{{ route('admin.sales.overview') }}" class="flex items-center gap-2 flex-wrap">
                     <div class="relative">
@@ -88,377 +97,439 @@
                 </form>
             </div>
 
-            {{-- ── TABS GLOBALES ───────────────────────────── --}}
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm px-5 py-3 flex items-center justify-between flex-wrap gap-3">
-                <div class="flex items-center gap-2">
-                    <svg class="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z"/></svg>
-                    <span class="text-xs font-medium text-gray-500 dark:text-gray-400">Vista:</span>
-                </div>
-                <div class="flex gap-2 flex-1 justify-center sm:justify-start">
-                    <button onclick="setView('month')" id="gtab-month" class="gtab px-4 py-2 rounded-lg text-sm font-medium border transition bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 border-gray-200 dark:border-gray-600">Mes actual</button>
-                    <button onclick="setView('vs')"    id="gtab-vs"    class="gtab px-4 py-2 rounded-lg text-sm font-medium border transition text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50">vs Mes anterior</button>
-                    <button onclick="setView('year')"  id="gtab-year"  class="gtab px-4 py-2 rounded-lg text-sm font-medium border transition text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50">Acumulado {{ $year }}</button>
-                </div>
-                <p class="text-xs text-gray-400" id="global-period-label">{{ $periodoLabel }}</p>
-            </div>
-
-            {{-- ── KPI CARDS ───────────────────────────────── --}}
+            {{-- ── KPI CARDS — COMISIONES ───────────────────── --}}
             <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex flex-col gap-3">
-                    <div class="flex items-center justify-between"><span class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Leads</span><span class="w-9 h-9 flex items-center justify-center rounded-lg bg-blue-50 dark:bg-blue-500/10"><svg class="w-4 h-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg></span></div>
-                    <p class="text-3xl font-bold text-gray-900 dark:text-gray-100" id="kpi-leads">—</p>
-                    <p class="text-xs text-gray-400 -mt-2" id="kpi-leads-sub">—</p>
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Total OTF</span>
+                        <span class="w-9 h-9 flex items-center justify-center rounded-lg bg-orange-50 dark:bg-orange-500/10">
+                            <svg class="w-4 h-4 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                        </span>
+                    </div>
+                    <p class="text-3xl font-bold text-orange-600 dark:text-orange-400">${{ number_format($totalOtf, 2, '.', ',') }}</p>
+                    <p class="text-xs text-gray-400 -mt-2">One-Time Fee · {{ $periodoComisiones }}</p>
                 </div>
                 <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex flex-col gap-3">
-                    <div class="flex items-center justify-between"><span class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Ganadas</span><span class="w-9 h-9 flex items-center justify-center rounded-lg bg-emerald-50 dark:bg-emerald-500/10"><svg class="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></span></div>
-                    <p class="text-3xl font-bold text-emerald-600 dark:text-emerald-400" id="kpi-won">—</p>
-                    <p class="text-xs text-gray-400 -mt-2">Oportunidades cerradas</p>
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Total MRC</span>
+                        <span class="w-9 h-9 flex items-center justify-center rounded-lg bg-teal-50 dark:bg-teal-500/10">
+                            <svg class="w-4 h-4 text-teal-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                        </span>
+                    </div>
+                    <p class="text-3xl font-bold text-teal-600 dark:text-teal-400">${{ number_format($totalMrc, 2, '.', ',') }}</p>
+                    <p class="text-xs text-gray-400 -mt-2">Monthly Recurring · {{ $periodoComisiones }}</p>
                 </div>
                 <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex flex-col gap-3">
-                    <div class="flex items-center justify-between"><span class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Win Rate</span><span class="w-9 h-9 flex items-center justify-center rounded-lg bg-sky-50 dark:bg-sky-500/10"><svg class="w-4 h-4 text-sky-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg></span></div>
-                    <p class="text-3xl font-bold text-sky-600 dark:text-sky-400" id="kpi-wr">—</p>
-                    <p class="text-xs text-gray-400 -mt-2" id="kpi-wr-sub">Del período</p>
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Total comisiones</span>
+                        <span class="w-9 h-9 flex items-center justify-center rounded-lg bg-violet-50 dark:bg-violet-500/10">
+                            <svg class="w-4 h-4 text-violet-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        </span>
+                    </div>
+                    <p class="text-3xl font-bold text-violet-600 dark:text-violet-400">${{ number_format($totalComis, 2, '.', ',') }}</p>
+                    <p class="text-xs text-gray-400 -mt-2">OTF + MRC · {{ $periodoComisiones }}</p>
                 </div>
                 <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex flex-col gap-3">
-                    <div class="flex items-center justify-between"><span class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Monto ganado</span><span class="w-9 h-9 flex items-center justify-center rounded-lg bg-violet-50 dark:bg-violet-500/10"><svg class="w-4 h-4 text-violet-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></span></div>
-                    <p class="text-3xl font-bold text-violet-600 dark:text-violet-400" id="kpi-revenue">—</p>
-                    <p class="text-xs text-gray-400 -mt-2">Ingreso esperado (CRM)</p>
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Órdenes</span>
+                        <span class="w-9 h-9 flex items-center justify-center rounded-lg bg-blue-50 dark:bg-blue-500/10">
+                            <svg class="w-4 h-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                        </span>
+                    </div>
+                    <p class="text-3xl font-bold text-blue-600 dark:text-blue-400">{{ number_format($cantidadOrd) }}</p>
+                    <p class="text-xs text-gray-400 -mt-2">Con comisión registrada · {{ $periodoComisiones }}</p>
                 </div>
             </div>
 
-            {{-- ── PODIO ───────────────────────────────────── --}}
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-6">
-                <div class="flex items-center justify-between mb-6">
-                    <h2 class="text-sm font-semibold text-gray-800 dark:text-gray-100">Ranking de ejecutivas</h2>
-                    <p class="text-xs text-gray-400" id="podio-sub">—</p>
+            {{-- ── PODIOS OTF + MRC ─────────────────────────── --}}
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+                {{-- Podio OTF --}}
+                <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-semibold bg-orange-50 text-orange-700 dark:bg-orange-500/10 dark:text-orange-400 border border-orange-200 dark:border-orange-500/20">OTF</span>
+                                <h2 class="text-sm font-semibold text-gray-800 dark:text-gray-100">One-Time Fee</h2>
+                            </div>
+                            <p class="text-xs text-gray-400 mt-1">Comisiones por cargo único · {{ $periodoComisiones }}</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-xs text-gray-400">Total</p>
+                            <p class="text-base font-bold text-orange-600 dark:text-orange-400">${{ number_format($totalOtf, 2, '.', ',') }}</p>
+                        </div>
+                    </div>
+                    @if(($totalOtf + $totalMrc) > 0)
+                    <div class="flex items-center gap-2 mb-5">
+                        <div class="flex-1 bg-gray-100 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden">
+                            <div class="bg-orange-400 h-1.5 rounded-full transition-all" style="width:{{ round($totalOtf / ($totalOtf + $totalMrc) * 100) }}%"></div>
+                        </div>
+                        <span class="text-xs text-gray-400 flex-shrink-0">{{ round($totalOtf / ($totalOtf + $totalMrc) * 100) }}% del total</span>
+                    </div>
+                    @endif
+                    <div id="podio-otf-content"></div>
                 </div>
-                <div id="podio-content"></div>
+
+                {{-- Podio MRC --}}
+                <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-semibold bg-teal-50 text-teal-700 dark:bg-teal-500/10 dark:text-teal-400 border border-teal-200 dark:border-teal-500/20">MRC</span>
+                                <h2 class="text-sm font-semibold text-gray-800 dark:text-gray-100">Monthly Recurring</h2>
+                            </div>
+                            <p class="text-xs text-gray-400 mt-1">Comisiones recurrentes mensuales · {{ $periodoComisiones }}</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-xs text-gray-400">Total</p>
+                            <p class="text-base font-bold text-teal-600 dark:text-teal-400">${{ number_format($totalMrc, 2, '.', ',') }}</p>
+                        </div>
+                    </div>
+                    @if(($totalOtf + $totalMrc) > 0)
+                    <div class="flex items-center gap-2 mb-5">
+                        <div class="flex-1 bg-gray-100 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden">
+                            <div class="bg-teal-400 h-1.5 rounded-full transition-all" style="width:{{ round($totalMrc / ($totalOtf + $totalMrc) * 100) }}%"></div>
+                        </div>
+                        <span class="text-xs text-gray-400 flex-shrink-0">{{ round($totalMrc / ($totalOtf + $totalMrc) * 100) }}% del total</span>
+                    </div>
+                    @endif
+                    <div id="podio-mrc-content"></div>
+                </div>
+
             </div>
 
-            {{-- ── DASHBOARDS 2x2 ──────────────────────────── --}}
+            {{-- ── GRÁFICAS COMISIONES ──────────────────────── --}}
             <div class="grid grid-cols-2 gap-6">
+
+                {{-- Stacked bar H: OTF + MRC por vendedor --}}
                 <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-6">
-                    <div class="mb-4"><h2 class="text-sm font-semibold text-gray-800 dark:text-gray-100">Monto ganado por ejecutiva</h2><p class="text-xs text-gray-400 mt-0.5" id="sub-barH">—</p></div>
-                    <div class="relative" style="height:232px"><canvas id="chartBarH"></canvas></div>
+                    <div class="mb-4">
+                        <h2 class="text-sm font-semibold text-gray-800 dark:text-gray-100">OTF + MRC por vendedor</h2>
+                        <p class="text-xs text-gray-400 mt-0.5">{{ $periodoComisiones }} · barras apiladas</p>
+                    </div>
+                    <div class="flex items-center gap-4 mb-3 text-xs text-gray-400">
+                        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm inline-block" style="background:#f97316"></span>OTF</span>
+                        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm inline-block" style="background:#14b8a6"></span>MRC</span>
+                    </div>
+                    <div class="relative" style="height:240px"><canvas id="chartStacked"></canvas></div>
                 </div>
+
+                {{-- Donut: OTF vs MRC total --}}
                 <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-6">
-                    <div class="mb-4"><h2 class="text-sm font-semibold text-gray-800 dark:text-gray-100">Participación en monto</h2><p class="text-xs text-gray-400 mt-0.5" id="sub-dona">—</p></div>
-                    <div class="flex items-center gap-4" style="height:200px">
-                        {{-- Dona con centro --}}
-                        <div class="relative flex-shrink-0" style="width:180px;height:180px;" id="dona-wrap">
+                    <div class="mb-4">
+                        <h2 class="text-sm font-semibold text-gray-800 dark:text-gray-100">Distribución OTF vs MRC</h2>
+                        <p class="text-xs text-gray-400 mt-0.5">{{ $periodoComisiones }} · participación por tipo</p>
+                    </div>
+                    <div class="flex items-center gap-6" style="height:200px">
+                        <div class="relative flex-shrink-0" style="width:180px;height:180px;">
                             <canvas id="chartDona" style="width:180px;height:180px;"></canvas>
                             <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                                 <p class="text-xs text-gray-400" id="dona-label">Total</p>
-                                <p class="text-base font-bold text-gray-900 dark:text-gray-100" id="dona-total">$0</p>
+                                <p class="text-base font-bold text-gray-900 dark:text-gray-100" id="dona-total">${{ number_format($totalComis, 2, '.', ',') }}</p>
                             </div>
                         </div>
-                        {{-- Leyenda al lado derecho --}}
-                        <div class="flex-1 min-w-0 space-y-2 overflow-y-auto" style="max-height:180px" id="donaLegend"></div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="grid grid-cols-2 gap-6">
-                <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-6">
-                    <div class="flex items-center justify-between mb-4">
-                        <div><h2 class="text-sm font-semibold text-gray-800 dark:text-gray-100">Tendencia mensual</h2><p class="text-xs text-gray-400 mt-0.5">Leads vs ganadas por mes</p></div>
-                        <div class="flex items-center gap-3 text-xs text-gray-400">
-                            <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-blue-500 opacity-70 inline-block"></span>Leads</span>
-                            <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-emerald-500 opacity-70 inline-block"></span>Ganadas</span>
+                        <div class="flex-1 space-y-3">
+                            <div class="flex items-center justify-between gap-3">
+                                <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-sm flex-shrink-0" style="background:#f97316"></span><span class="text-sm text-gray-600 dark:text-gray-300">OTF</span></div>
+                                <div class="text-right">
+                                    <p class="text-sm font-semibold text-gray-900 dark:text-gray-100">${{ number_format($totalOtf, 2, '.', ',') }}</p>
+                                    @if($totalComis > 0)<p class="text-xs text-gray-400">{{ round($totalOtf / $totalComis * 100, 1) }}%</p>@endif
+                                </div>
+                            </div>
+                            <div class="flex items-center justify-between gap-3">
+                                <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-sm flex-shrink-0" style="background:#14b8a6"></span><span class="text-sm text-gray-600 dark:text-gray-300">MRC</span></div>
+                                <div class="text-right">
+                                    <p class="text-sm font-semibold text-gray-900 dark:text-gray-100">${{ number_format($totalMrc, 2, '.', ',') }}</p>
+                                    @if($totalComis > 0)<p class="text-xs text-gray-400">{{ round($totalMrc / $totalComis * 100, 1) }}%</p>@endif
+                                </div>
+                            </div>
                         </div>
                     </div>
-                    <div class="relative h-56"><canvas id="chartTrend"></canvas></div>
                 </div>
-                <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-6">
-                    <div class="mb-4"><h2 class="text-sm font-semibold text-gray-800 dark:text-gray-100">Win Rate por ejecutiva</h2><p class="text-xs text-gray-400 mt-0.5" id="sub-wr">—</p></div>
-                    <div class="relative h-56"><canvas id="chartWR"></canvas></div>
-                </div>
+
             </div>
 
             <div class="grid grid-cols-2 gap-6">
+
+                {{-- Bar OTF ranking --}}
                 <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-6">
-                    <div class="mb-4"><h2 class="text-sm font-semibold text-gray-800 dark:text-gray-100">Oportunidades ganadas</h2><p class="text-xs text-gray-400 mt-0.5" id="sub-won">—</p></div>
-                    <div class="relative h-56"><canvas id="chartWon"></canvas></div>
+                    <div class="mb-4">
+                        <h2 class="text-sm font-semibold text-gray-800 dark:text-gray-100">Ranking OTF por vendedor</h2>
+                        <p class="text-xs text-gray-400 mt-0.5">{{ $periodoComisiones }} · comisión one-time fee</p>
+                    </div>
+                    <div class="relative h-56"><canvas id="chartOtfBar"></canvas></div>
                 </div>
+
+                {{-- Bar MRC ranking --}}
                 <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-6">
-                    <div class="mb-4"><h2 class="text-sm font-semibold text-gray-800 dark:text-gray-100">Monto mensual {{ $year }}</h2><p class="text-xs text-gray-400 mt-0.5">Ingreso esperado · línea de área</p></div>
-                    <div class="relative h-56"><canvas id="chartRevLine"></canvas></div>
+                    <div class="mb-4">
+                        <h2 class="text-sm font-semibold text-gray-800 dark:text-gray-100">Ranking MRC por vendedor</h2>
+                        <p class="text-xs text-gray-400 mt-0.5">{{ $periodoComisiones }} · comisión recurrente mensual</p>
+                    </div>
+                    <div class="relative h-56"><canvas id="chartMrcBar"></canvas></div>
                 </div>
+
+            </div>
+
+            <div class="grid grid-cols-2 gap-6">
+
+                {{-- Total comisiones por vendedor --}}
+                <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-6">
+                    <div class="mb-4">
+                        <h2 class="text-sm font-semibold text-gray-800 dark:text-gray-100">Total comisiones por vendedor</h2>
+                        <p class="text-xs text-gray-400 mt-0.5">{{ $periodoComisiones }} · OTF + MRC combinado</p>
+                    </div>
+                    <div class="relative h-56"><canvas id="chartTotal"></canvas></div>
+                </div>
+
+                {{-- Órdenes por vendedor --}}
+                <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-6">
+                    <div class="mb-4">
+                        <h2 class="text-sm font-semibold text-gray-800 dark:text-gray-100">Órdenes por vendedor</h2>
+                        <p class="text-xs text-gray-400 mt-0.5">{{ $periodoComisiones }} · cantidad de órdenes con comisión</p>
+                    </div>
+                    <div class="relative h-56"><canvas id="chartOrders"></canvas></div>
+                </div>
+
             </div>
 
         </div>
     </div>
 
     <script>
-    const palette=['#7F77DD','#378ADD','#1D9E75','#EF9F27','#E24B4A','#06b6d4','#6366f1','#14b8a6','#f97316','#ec4899','#84cc16'];
-    const dataMonth  ={!! $jsMonth !!};
-    const dataYear   ={!! $jsYear !!};
-    const dataPrev   ={!! $jsPrev !!};
-    const dataMonthly={!! $jsMonthly !!};
-    const PERIODO='{{ $periodoLabel }}';
-    const PREV   ='{{ $prevLabel }}';
-    const YEAR   ={{ $year }};
+    const palette      = ['#7F77DD','#378ADD','#1D9E75','#EF9F27','#E24B4A','#06b6d4','#6366f1','#f97316','#ec4899','#84cc16','#a855f7'];
+    const dataOtf      = {!! $jsOtf !!};
+    const dataMrc      = {!! $jsMrc !!};
 
-    const isDark    =document.documentElement.classList.contains('dark');
-    const gridColor =isDark?'rgba(255,255,255,0.06)':'rgba(0,0,0,0.06)';
-    const labelColor=isDark?'#9ca3af':'#6b7280';
-    Chart.defaults.font.family='ui-sans-serif,system-ui,sans-serif';
-    Chart.defaults.font.size=11;
+    const isDark       = document.documentElement.classList.contains('dark');
+    const gridColor    = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+    const labelColor   = isDark ? '#9ca3af' : '#6b7280';
+    Chart.defaults.font.family = 'ui-sans-serif,system-ui,sans-serif';
+    Chart.defaults.font.size   = 11;
 
-    function fmtFull(n){return '$'+Math.round(n).toLocaleString();}
-    function fmtK(n){return n>=1000000?'$'+(n/1000000).toFixed(1)+'M':n>=1000?'$'+(n/1000).toFixed(0)+'k':'$'+Math.round(n);}
-    function wrColor(wr){return wr>=50?'#1D9E75':wr>=25?'#EF9F27':'#E24B4A';}
-    function signStr(d){return d>0?'+':d<0?'−':'';}
-    function deltaCol(d){return d>0?'#1D9E75':d<0?'#E24B4A':'#9ca3af';}
-
-    // Avatar: imagen real o fallback con iniciales
-    function avatarHTML(e, sz, fontSize) {
-        if (e.image) {
-            return `<img src="${e.image}" style="width:${sz}px;height:${sz}px;border-radius:50%;object-fit:cover;display:block;" alt="${e.name}">`;
-        }
-        return `<div style="width:${sz}px;height:${sz}px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:${fontSize};font-weight:500;background:${palette[0]}">${e.initials}</div>`;
+    // ── Formatters ────────────────────────────────────────────
+    function fmtFull(n) {
+        return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
+    function fmtK(n) {
+        if (n >= 1000000) return '$' + (n / 1000000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + 'M';
+        if (n >= 1000)    return '$' + (n / 1000).toLocaleString('en-US',    { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + 'k';
+        return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    // ── Merge OTF + MRC por vendedor ──────────────────────────
+    function getMerged() {
+        const names = [...new Set([...dataOtf.map(e => e.name), ...dataMrc.map(e => e.name)])];
+        return names.map(name => {
+            const o = dataOtf.find(e => e.name === name) || { revenue: 0, cantidad: 0, short: name.split(' ')[0], initials: '', image: null };
+            const m = dataMrc.find(e => e.name === name) || { revenue: 0, cantidad: 0 };
+            return {
+                name,
+                short:    o.short    || name.split(' ')[0],
+                initials: o.initials || '',
+                image:    o.image    || null,
+                otf:      o.revenue,
+                mrc:      m.revenue,
+                total:    o.revenue + m.revenue,
+                cantidad: o.cantidad + m.cantidad,
+            };
+        }).sort((a, b) => b.total - a.total);
+    }
+
+    const merged = getMerged();
+
+    // ── Avatar ────────────────────────────────────────────────
     function avatarHtmlIdx(e, sz, fontSize, idx) {
-        if (e.image) {
-            return `<img src="${e.image}" style="width:${sz}px;height:${sz}px;border-radius:50%;object-fit:cover;display:block;" alt="${e.name}">`;
+        if (e.image) return `<img src="${e.image}" style="width:${sz}px;height:${sz}px;border-radius:50%;object-fit:cover;display:block;" alt="${e.name}">`;
+        return `<div style="width:${sz}px;height:${sz}px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:${fontSize};font-weight:500;background:${palette[idx % palette.length]}">${e.initials}</div>`;
+    }
+
+    // ── Podio Comisiones ──────────────────────────────────────
+    function renderPodioComision(data, containerId, accent, accentBg, accentTxt) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        if (!data || data.length === 0) {
+            container.innerHTML = '<p style="font-size:12px;color:var(--color-text-tertiary);text-align:center;padding:24px 0">Sin datos para este período</p>';
+            return;
         }
-        return `<div style="width:${sz}px;height:${sz}px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:${fontSize};font-weight:500;background:${palette[idx]}">${e.initials}</div>`;
-    }
+        const podioColors = [
+            { bg: accentBg,  txt: accentTxt, ht: 80 },
+            { bg: '#F1EFE8', txt: '#5F5E5A', ht: 56 },
+            { bg: '#FAECE7', txt: '#993C1D', ht: 44 },
+        ];
+        const lbls  = ['1er lugar', '2do lugar', '3er lugar'];
+        const order = data.length >= 3 ? [1, 0, 2] : (data.length === 2 ? [1, 0] : [0]);
 
-    let currentView='month';
-    let charts={};
-
-    function destroyChart(id){if(charts[id]){charts[id].destroy();delete charts[id];}}
-
-    function getActiveData(){
-        if(currentView==='year') return [...dataYear].sort((a,b)=>b.revenue-a.revenue);
-        if(currentView==='vs'){
-            return [...dataMonth].map(e=>{
-                const p=dataPrev.find(x=>x.name===e.name)||{revenue:0,won:0,leads:0,wr:0};
-                return{...e,prevRevenue:p.revenue,prevWon:p.won,prevLeads:p.leads,prevWr:p.wr,
-                    deltaRev:e.revenue-p.revenue,deltaWon:e.won-p.won};
-            }).sort((a,b)=>b.revenue-a.revenue);
-        }
-        return [...dataMonth].sort((a,b)=>b.revenue-a.revenue);
-    }
-
-    function getPeriodLabel(){
-        if(currentView==='year') return 'Acumulado '+YEAR;
-        if(currentView==='vs') return PERIODO+' vs '+PREV;
-        return PERIODO;
-    }
-
-    function updateKpis(data){
-        const totLeads=data.reduce((s,e)=>s+e.leads,0);
-        const totWon=data.reduce((s,e)=>s+e.won,0);
-        const totRev=data.reduce((s,e)=>s+e.revenue,0);
-        const wr=((totLeads+totWon)>0?(totWon/(totLeads+totWon)*100):0).toFixed(1);
-        document.getElementById('kpi-leads').textContent=totLeads.toLocaleString();
-        document.getElementById('kpi-won').textContent=totWon.toLocaleString();
-        document.getElementById('kpi-wr').textContent=wr+'%';
-        document.getElementById('kpi-revenue').textContent=fmtFull(totRev);
-        document.getElementById('kpi-leads-sub').textContent='Creados · '+getPeriodLabel();
-        document.getElementById('kpi-wr-sub').textContent=getPeriodLabel();
-    }
-
-    function renderPodio(data){
-        const bgP={0:'#FAEEDA',1:'#F1EFE8',2:'#FAECE7'};
-        const txtC={0:'#BA7517',1:'#5F5E5A',2:'#993C1D'};
-        const lbls=['1er lugar','2do lugar','3er lugar'];
-        const hts={0:96,1:68,2:52};
-        const order=[1,0,2];
-        document.getElementById('podio-sub').textContent=getPeriodLabel();
-
-        let html='<div style="display:flex;align-items:flex-end;justify-content:center;gap:16px;margin-bottom:1.5rem">';
-        order.forEach(idx=>{
-            const e=data[idx]; if(!e) return;
-            const sz=idx===0?64:52;
-            const fs=idx===0?'18px':'14px';
-            let dHtml='';
-            if(currentView==='vs'&&e.deltaRev!==undefined){
-                const col=deltaCol(e.deltaRev);
-                dHtml=`<div style="font-size:11px;font-weight:500;color:${col};text-align:center">${signStr(e.deltaRev)}${fmtK(Math.abs(e.deltaRev))}</div>`;
-            }
-            html+=`<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1;max-width:180px">
+        let html = '<div style="display:flex;align-items:flex-end;justify-content:center;gap:12px;margin-bottom:1rem">';
+        order.forEach(idx => {
+            const e = data[idx]; if (!e) return;
+            const isFirst = idx === 0;
+            const sz = isFirst ? 52 : 40;
+            const fs = isFirst ? '15px' : '12px';
+            const pc = podioColors[idx] || podioColors[2];
+            html += `<div style="display:flex;flex-direction:column;align-items:center;gap:5px;flex:1;max-width:160px">
                 <div style="position:relative">
-                    ${idx===0?'<span style="position:absolute;top:-20px;left:50%;transform:translateX(-50%);font-size:18px;color:#BA7517;z-index:1">★</span>':''}
-                    ${avatarHtmlIdx(e,sz,fs,idx)}
+                    ${isFirst ? `<span style="position:absolute;top:-18px;left:50%;transform:translateX(-50%);font-size:16px;color:${accentTxt}">★</span>` : ''}
+                    ${avatarHtmlIdx(e, sz, fs, idx)}
                 </div>
-                <div style="font-size:13px;font-weight:500;color:var(--color-text-primary);text-align:center">${e.name.split(' ')[0]}</div>
-                <div style="font-size:${idx===0?'20px':'15px'};font-weight:500;color:${txtC[idx]};text-align:center">${fmtFull(e.revenue)}</div>
-                ${dHtml}
-                <div style="font-size:11px;color:var(--color-text-tertiary);text-align:center">${e.won} ganada${e.won!==1?'s':''}</div>
-                <div style="width:100%;border-radius:6px 6px 0 0;background:${bgP[idx]};height:${hts[idx]}px;display:flex;align-items:flex-end;justify-content:center;padding-bottom:8px">
-                    <span style="font-size:11px;font-weight:500;padding:2px 10px;border-radius:999px;background:${bgP[idx]};color:${txtC[idx]}">${lbls[idx]}</span>
+                <div style="font-size:12px;font-weight:500;color:var(--color-text-primary);text-align:center;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.short}</div>
+                <div style="font-size:${isFirst ? '17px' : '13px'};font-weight:600;color:${pc.txt};text-align:center">${fmtFull(e.revenue)}</div>
+                <div style="font-size:10px;color:var(--color-text-tertiary);text-align:center">${e.cantidad} orden${e.cantidad !== 1 ? 'es' : ''}</div>
+                <div style="width:100%;border-radius:5px 5px 0 0;background:${pc.bg};height:${pc.ht}px;display:flex;align-items:flex-end;justify-content:center;padding-bottom:6px">
+                    <span style="font-size:10px;font-weight:500;padding:1px 8px;border-radius:999px;background:${pc.bg};color:${pc.txt}">${lbls[idx]}</span>
                 </div>
             </div>`;
         });
-        html+='</div>';
+        html += '</div>';
 
-        // Mini cards resto con imagen
-        html+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px">';
-        data.slice(3).forEach((e,j)=>{
-            const i=j+3;
-            let dSpan='';
-            if(currentView==='vs'&&e.deltaRev!==undefined)
-                dSpan=`<span style="font-size:10px;color:${deltaCol(e.deltaRev)};font-weight:500">${signStr(e.deltaRev)}${fmtK(Math.abs(e.deltaRev))}</span>`;
-            html+=`<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:10px;display:flex;align-items:center;gap:8px">
-                <div style="flex-shrink:0">${avatarHtmlIdx(e,30,'10px',i)}</div>
-                <div style="min-width:0"><div style="font-size:11px;font-weight:500;color:var(--color-text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.name.split(' ')[0]}</div>
-                <div style="font-size:11px;color:var(--color-text-secondary)">${fmtFull(e.revenue)} ${dSpan}</div></div>
-            </div>`;
-        });
-        html+='</div>';
-        document.getElementById('podio-content').innerHTML=html;
+        if (data.length > 3) {
+            html += '<div style="display:flex;flex-direction:column;gap:6px;margin-top:4px">';
+            data.slice(3).forEach((e, j) => {
+                const i   = j + 3;
+                const pct = data[0].revenue > 0 ? ((e.revenue / data[0].revenue) * 100).toFixed(0) : 0;
+                html += `<div style="display:flex;align-items:center;gap:8px">
+                    <span style="font-size:10px;color:var(--color-text-tertiary);width:16px;text-align:right;flex-shrink:0">${i + 1}</span>
+                    ${avatarHtmlIdx(e, 24, '9px', i)}
+                    <span style="font-size:12px;color:var(--color-text-primary);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${e.short}</span>
+                    <div style="flex:2;background:var(--color-background-secondary);border-radius:3px;overflow:hidden;height:4px">
+                        <div style="width:${pct}%;height:4px;background:${accent};border-radius:3px;transition:width .4s"></div>
+                    </div>
+                    <span style="font-size:11px;font-weight:500;color:var(--color-text-secondary);flex-shrink:0">${fmtFull(e.revenue)}</span>
+                </div>`;
+            });
+            html += '</div>';
+        }
+        container.innerHTML = html;
     }
 
-    function renderBarH(data){
-        destroyChart('barH');
-        document.getElementById('sub-barH').textContent=getPeriodLabel()+' · ingreso esperado CRM';
-        const isVs=currentView==='vs';
-        const datasets=isVs?[
-            {label:'Mes actual',  data:data.map(e=>e.revenue),        backgroundColor:palette.slice(0,data.length),          borderRadius:4},
-            {label:'Mes anterior',data:data.map(e=>e.prevRevenue||0), backgroundColor:data.map((_,i)=>palette[i]+'55'),      borderRadius:4},
-        ]:[{label:'Monto',data:data.map(e=>e.revenue),backgroundColor:palette.slice(0,data.length),borderRadius:4}];
-        charts.barH=new Chart(document.getElementById('chartBarH'),{
-            type:'bar',data:{labels:data.map(e=>e.short),datasets},
-            options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
-                plugins:{legend:{display:isVs,position:'top',labels:{color:labelColor,boxWidth:10,padding:10}},
-                    tooltip:{callbacks:{label:ctx=>' '+fmtFull(ctx.raw)}}},
-                scales:{x:{grid:{color:gridColor},ticks:{color:labelColor,callback:v=>fmtK(v)},beginAtZero:true},
-                        y:{grid:{display:false},ticks:{color:labelColor}}}}
-        });
-    }
+    // ── Gráficas ──────────────────────────────────────────────
+    let charts = {};
+    function destroyChart(id) { if (charts[id]) { charts[id].destroy(); delete charts[id]; } }
 
-    function renderDona(data){
-        destroyChart('dona');
-        document.getElementById('sub-dona').textContent=getPeriodLabel();
-        const filtered=data.filter(e=>e.revenue>0);
-        const totalRev=filtered.reduce((s,e)=>s+e.revenue,0);
-        document.getElementById('dona-label').textContent='Total';
-        document.getElementById('dona-total').textContent=fmtK(totalRev);
-        charts.dona=new Chart(document.getElementById('chartDona'),{
-            type:'doughnut',
-            data:{labels:filtered.map(e=>e.name.split(' ')[0]),datasets:[{
-                data:filtered.map(e=>e.revenue),backgroundColor:palette,
-                borderWidth:3,borderColor:isDark?'#1f2937':'#ffffff',hoverOffset:8
-            }]},
-            options:{responsive:false,maintainAspectRatio:false,cutout:'72%',
-                plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>` ${fmtFull(ctx.raw)} (${totalRev>0?((ctx.raw/totalRev)*100).toFixed(1):0}%)`}}},
-                onHover:(e,els)=>{
-                    if(els.length){const i=els[0].index;document.getElementById('dona-label').textContent=filtered[i].name.split(' ')[0];document.getElementById('dona-total').textContent=fmtFull(filtered[i].revenue);}
-                    else{document.getElementById('dona-label').textContent='Total';document.getElementById('dona-total').textContent=fmtK(totalRev);}
+    function renderCharts() {
+        // 1. Stacked bar H — OTF + MRC por vendedor
+        destroyChart('stacked');
+        charts.stacked = new Chart(document.getElementById('chartStacked'), {
+            type: 'bar',
+            data: {
+                labels: merged.map(e => e.short),
+                datasets: [
+                    { label: 'OTF', data: merged.map(e => e.otf), backgroundColor: 'rgba(249,115,22,0.8)', borderRadius: 3 },
+                    { label: 'MRC', data: merged.map(e => e.mrc), backgroundColor: 'rgba(20,184,166,0.8)',  borderRadius: 3 },
+                ]
+            },
+            options: {
+                indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtFull(ctx.raw)}` } }
+                },
+                scales: {
+                    x: { stacked: true, grid: { color: gridColor }, ticks: { color: labelColor, callback: v => fmtK(v) }, beginAtZero: true },
+                    y: { stacked: true, grid: { display: false }, ticks: { color: labelColor } }
                 }
             }
         });
-        const leg=document.getElementById('donaLegend');
-        leg.innerHTML='';
-        filtered.forEach((e,i)=>{
-            const pct=totalRev>0?((e.revenue/totalRev)*100).toFixed(1):0;
-            let dSpan='';
-            if(currentView==='vs'&&e.deltaRev!==undefined)
-                dSpan=`<span style="font-size:10px;color:${deltaCol(e.deltaRev)};font-weight:500;margin-left:2px">${signStr(e.deltaRev)}${fmtK(Math.abs(e.deltaRev))}</span>`;
-            leg.innerHTML+=`<div style="display:flex;align-items:center;justify-content:space-between;gap:4px">
-                <div style="display:flex;align-items:center;gap:5px;min-width:0">
-                    ${e.image?`<img src="${e.image}" style="width:16px;height:16px;border-radius:50%;object-fit:cover;flex-shrink:0">`:`<span style="width:8px;height:8px;border-radius:50%;background:${palette[i]};flex-shrink:0;display:inline-block"></span>`}
-                    <span style="font-size:12px;color:var(--color-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.name.split(' ')[0]}</span>
-                </div>
-                <div style="display:flex;align-items:center;gap:3px;flex-shrink:0">
-                    <span style="font-size:11px;color:var(--color-text-tertiary)">${pct}%</span>
-                    <span style="font-size:12px;font-weight:500;color:var(--color-text-primary)">${fmtK(e.revenue)}</span>
-                    ${dSpan}
-                </div>
-            </div>`;
+
+        // 2. Donut — OTF vs MRC
+        const totalComis = {!! $totalComis !!};
+        const totalOtf   = {!! $totalOtf !!};
+        const totalMrc   = {!! $totalMrc !!};
+        destroyChart('dona');
+        charts.dona = new Chart(document.getElementById('chartDona'), {
+            type: 'doughnut',
+            data: {
+                labels: ['OTF', 'MRC'],
+                datasets: [{ data: [totalOtf, totalMrc], backgroundColor: ['rgba(249,115,22,0.85)', 'rgba(20,184,166,0.85)'], borderWidth: 3, borderColor: isDark ? '#1f2937' : '#ffffff', hoverOffset: 8 }]
+            },
+            options: {
+                responsive: false, maintainAspectRatio: false, cutout: '72%',
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${fmtFull(ctx.raw)} (${totalComis > 0 ? ((ctx.raw / totalComis) * 100).toFixed(1) : 0}%)` } }
+                },
+                onHover: (e, els) => {
+                    const lbl  = document.getElementById('dona-label');
+                    const tot  = document.getElementById('dona-total');
+                    if (els.length) {
+                        const i = els[0].index;
+                        lbl.textContent = ['OTF', 'MRC'][i];
+                        tot.textContent = fmtFull([totalOtf, totalMrc][i]);
+                    } else {
+                        lbl.textContent = 'Total';
+                        tot.textContent = fmtFull(totalComis);
+                    }
+                }
+            }
+        });
+
+        // 3. Bar OTF ranking
+        destroyChart('otfBar');
+        const otfSorted = [...dataOtf].sort((a, b) => b.revenue - a.revenue);
+        charts.otfBar = new Chart(document.getElementById('chartOtfBar'), {
+            type: 'bar',
+            data: {
+                labels: otfSorted.map(e => e.short),
+                datasets: [{ label: 'OTF', data: otfSorted.map(e => e.revenue), backgroundColor: 'rgba(249,115,22,0.8)', borderRadius: 4 }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${fmtFull(ctx.raw)}` } } },
+                scales: { x: { grid: { color: gridColor }, ticks: { color: labelColor } }, y: { grid: { color: gridColor }, ticks: { color: labelColor, callback: v => fmtK(v) }, beginAtZero: true } }
+            }
+        });
+
+        // 4. Bar MRC ranking
+        destroyChart('mrcBar');
+        const mrcSorted = [...dataMrc].sort((a, b) => b.revenue - a.revenue);
+        charts.mrcBar = new Chart(document.getElementById('chartMrcBar'), {
+            type: 'bar',
+            data: {
+                labels: mrcSorted.map(e => e.short),
+                datasets: [{ label: 'MRC', data: mrcSorted.map(e => e.revenue), backgroundColor: 'rgba(20,184,166,0.8)', borderRadius: 4 }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${fmtFull(ctx.raw)}` } } },
+                scales: { x: { grid: { color: gridColor }, ticks: { color: labelColor } }, y: { grid: { color: gridColor }, ticks: { color: labelColor, callback: v => fmtK(v) }, beginAtZero: true } }
+            }
+        });
+
+        // 5. Bar total comisiones
+        destroyChart('total');
+        charts.total = new Chart(document.getElementById('chartTotal'), {
+            type: 'bar',
+            data: {
+                labels: merged.map(e => e.short),
+                datasets: [{ label: 'Total', data: merged.map(e => e.total), backgroundColor: palette.slice(0, merged.length), borderRadius: 4 }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${fmtFull(ctx.raw)}` } } },
+                scales: { x: { grid: { color: gridColor }, ticks: { color: labelColor } }, y: { grid: { color: gridColor }, ticks: { color: labelColor, callback: v => fmtK(v) }, beginAtZero: true } }
+            }
+        });
+
+        // 6. Bar órdenes por vendedor
+        destroyChart('orders');
+        charts.orders = new Chart(document.getElementById('chartOrders'), {
+            type: 'bar',
+            data: {
+                labels: merged.map(e => e.short),
+                datasets: [{ label: 'Órdenes', data: merged.map(e => e.cantidad), backgroundColor: palette.slice(0, merged.length), borderRadius: 4 }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.raw} órdenes` } } },
+                scales: { x: { grid: { color: gridColor }, ticks: { color: labelColor } }, y: { grid: { color: gridColor }, ticks: { color: labelColor }, beginAtZero: true } }
+            }
         });
     }
 
-    function renderTrend(){
-        destroyChart('trend');
-        charts.trend=new Chart(document.getElementById('chartTrend'),{
-            type:'bar',
-            data:{labels:dataMonthly.map(m=>m.label),datasets:[
-                {label:'Leads',  data:dataMonthly.map(m=>m.leads),backgroundColor:'rgba(59,130,246,0.65)',borderRadius:3},
-                {label:'Ganadas',data:dataMonthly.map(m=>m.won),  backgroundColor:'rgba(16,185,129,0.65)',borderRadius:3},
-            ]},
-            options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
-                scales:{x:{grid:{color:gridColor},ticks:{color:labelColor}},y:{grid:{color:gridColor},ticks:{color:labelColor},beginAtZero:true}}}
-        });
-    }
-
-    function renderWR(data){
-        destroyChart('wr');
-        document.getElementById('sub-wr').textContent=getPeriodLabel()+' · verde ≥50% · ámbar ≥25%';
-        const s=[...data].sort((a,b)=>b.wr-a.wr);
-        const isVs=currentView==='vs';
-        const datasets=isVs?[
-            {label:'Mes actual',  data:s.map(e=>e.wr),      backgroundColor:s.map(e=>e.wr>=50?'rgba(16,185,129,0.75)':e.wr>=25?'rgba(239,159,39,0.75)':'rgba(226,75,74,0.75)'),borderRadius:4},
-            {label:'Mes anterior',data:s.map(e=>e.prevWr||0),backgroundColor:s.map(()=>'rgba(148,163,184,0.4)'),borderRadius:4},
-        ]:[{label:'WR %',data:s.map(e=>e.wr),backgroundColor:s.map(e=>e.wr>=50?'rgba(16,185,129,0.75)':e.wr>=25?'rgba(239,159,39,0.75)':'rgba(226,75,74,0.75)'),borderRadius:4}];
-        charts.wr=new Chart(document.getElementById('chartWR'),{
-            type:'bar',data:{labels:s.map(e=>e.short),datasets},
-            options:{responsive:true,maintainAspectRatio:false,
-                plugins:{legend:{display:isVs,position:'top',labels:{color:labelColor,boxWidth:10,padding:10}},tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: ${ctx.raw}%`}}},
-                scales:{x:{grid:{color:gridColor},ticks:{color:labelColor}},y:{grid:{color:gridColor},ticks:{color:labelColor,callback:v=>v+'%'},beginAtZero:true,max:100}}}
-        });
-    }
-
-    function renderWon(data){
-        destroyChart('won');
-        document.getElementById('sub-won').textContent=getPeriodLabel();
-        const isVs=currentView==='vs';
-        const datasets=isVs?[
-            {label:'Mes actual',  data:data.map(e=>e.won),        backgroundColor:palette.slice(0,data.length),        borderRadius:4},
-            {label:'Mes anterior',data:data.map(e=>e.prevWon||0), backgroundColor:data.map((_,i)=>palette[i]+'55'),   borderRadius:4},
-        ]:[{label:'Ganadas',data:data.map(e=>e.won),backgroundColor:palette.slice(0,data.length),borderRadius:4}];
-        charts.won=new Chart(document.getElementById('chartWon'),{
-            type:'bar',data:{labels:data.map(e=>e.short),datasets},
-            options:{responsive:true,maintainAspectRatio:false,
-                plugins:{legend:{display:isVs,position:'top',labels:{color:labelColor,boxWidth:10,padding:10}}},
-                scales:{x:{grid:{color:gridColor},ticks:{color:labelColor}},y:{grid:{color:gridColor},ticks:{color:labelColor},beginAtZero:true}}}
-        });
-    }
-
-
-    function renderRevLine(){
-        destroyChart('revLine');
-        charts.revLine=new Chart(document.getElementById('chartRevLine'),{
-            type:'line',
-            data:{labels:dataMonthly.map(m=>m.label),datasets:[{
-                label:'Monto ($)',data:dataMonthly.map(m=>m.revenue),
-                borderColor:'#8b5cf6',backgroundColor:'rgba(139,92,246,0.12)',
-                borderWidth:2,pointRadius:4,pointBackgroundColor:'#8b5cf6',tension:0.4,fill:true
-            }]},
-            options:{responsive:true,maintainAspectRatio:false,
-                plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>' '+fmtFull(ctx.raw)}}},
-                scales:{x:{grid:{color:gridColor},ticks:{color:labelColor}},y:{grid:{color:gridColor},ticks:{color:labelColor,callback:v=>fmtK(v)},beginAtZero:true}}}
-        });
-    }
-
-    function renderAll(){
-        const data=getActiveData();
-        document.getElementById('global-period-label').textContent=getPeriodLabel();
-        updateKpis(data);
-        renderPodio(data);
-        renderBarH(data);
-        renderDona(data);
-        renderTrend();
-        renderWR(data);
-        renderWon(data);
-        renderRevLine();
-    }
-
-    function setView(v){
-        currentView=v;
-        document.querySelectorAll('.gtab').forEach(t=>{
-            const a=t.id==='gtab-'+v;
-            t.className=`gtab px-4 py-2 rounded-lg text-sm font-medium border transition ${a
-                ?'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 border-gray-200 dark:border-gray-600'
-                :'text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50'}`;
-        });
-        renderAll();
-    }
-
-    renderAll();
+    // ── Init ──────────────────────────────────────────────────
+    renderPodioComision([...dataOtf].sort((a,b) => b.revenue - a.revenue), 'podio-otf-content', '#f97316', '#FFF7ED', '#c2410c');
+    renderPodioComision([...dataMrc].sort((a,b) => b.revenue - a.revenue), 'podio-mrc-content', '#14b8a6', '#F0FDFA', '#0f766e');
+    renderCharts();
     </script>
 
 </x-app-layout>
