@@ -11,9 +11,6 @@ class GlpiController extends Controller
 {
     public function __construct(protected GlpiService $glpi) {}
 
-    /**
-     * Inicia sesión en GLPI manualmente.
-     */
     public function sessionInit()
     {
         try {
@@ -25,9 +22,6 @@ class GlpiController extends Controller
         }
     }
 
-    /**
-     * Cierra la sesión activa en GLPI.
-     */
     public function sessionKill()
     {
         try {
@@ -40,10 +34,6 @@ class GlpiController extends Controller
         }
     }
 
-    /**
-     * Dashboard principal del módulo GLPI.
-     * Muestra resumen de todos los tipos de activos.
-     */
     public function index()
     {
         $assetTypes = config('glpi.asset_types');
@@ -51,11 +41,8 @@ class GlpiController extends Controller
 
         foreach ($assetTypes as $type => $label) {
             try {
-                $result = $this->glpi->getAllItems($type, ['range' => '0-0']);
-                $summary[$type] = [
-                    'label' => $label,
-                    'total' => $result['total'],
-                ];
+                $result = $this->glpi->getAllItems($type, ['range' => '0-1']);
+                $summary[$type] = ['label' => $label, 'total' => $result['total']];
             } catch (Exception) {
                 $summary[$type] = ['label' => $label, 'total' => 0];
             }
@@ -64,50 +51,6 @@ class GlpiController extends Controller
         return view('admin.glpi.index', compact('summary'));
     }
 
-    /**
-     * Lista de items de un tipo específico con paginación y búsqueda.
-     */
-    public function items(Request $request, string $itemtype)
-    {
-        $assetTypes = config('glpi.asset_types');
-        abort_unless(array_key_exists($itemtype, $assetTypes), 404);
-
-        $search  = $request->get('search', '');
-        $page    = max(1, (int) $request->get('page', 1));
-        $perPage = 20;
-        $start   = ($page - 1) * $perPage;
-
-        try {
-            if ($search) {
-                $result = $this->glpi->searchItems($itemtype, [
-                    ['field' => 1, 'searchtype' => 'contains', 'value' => $search],
-                ], ['range' => "{$start}-" . ($start + $perPage - 1)]);
-            } else {
-                $result = $this->glpi->getAllItems($itemtype, [
-                    'range' => "{$start}-" . ($start + $perPage - 1),
-                ]);
-            }
-
-            $items = $result['items'];
-            $total = $result['total'];
-        } catch (Exception $e) {
-            $items = [];
-            $total = 0;
-            session()->flash('error', 'Error al conectar con GLPI: ' . $e->getMessage());
-        }
-
-        $totalPages = $total > 0 ? ceil($total / $perPage) : 1;
-        $label      = $assetTypes[$itemtype];
-
-        return view('admin.glpi.items', compact(
-            'items', 'total', 'itemtype', 'label',
-            'search', 'page', 'totalPages', 'perPage'
-        ));
-    }
-
-    /**
-     * Detalle de un activo específico.
-     */
     public function show(string $itemtype, int $id)
     {
         $assetTypes = config('glpi.asset_types');
@@ -123,33 +66,19 @@ class GlpiController extends Controller
         return view('admin.glpi.show', compact('item', 'itemtype', 'label'));
     }
 
-    /**
-     * Formulario para crear un nuevo activo.
-     */
     public function create(string $itemtype)
     {
         $assetTypes = config('glpi.asset_types');
         abort_unless(array_key_exists($itemtype, $assetTypes), 404);
-
         $label = $assetTypes[$itemtype];
-
-        try {
-            $entities = $this->glpi->getEntities();
-        } catch (Exception) {
-            $entities = [];
-        }
-
+        try { $entities = $this->glpi->getMyEntities(); } catch (Exception) { $entities = []; }
         return view('admin.glpi.create', compact('itemtype', 'label', 'entities'));
     }
 
-    /**
-     * Guarda un nuevo activo en GLPI.
-     */
     public function store(Request $request, string $itemtype)
     {
         $assetTypes = config('glpi.asset_types');
         abort_unless(array_key_exists($itemtype, $assetTypes), 404);
-
         $validated = $request->validate([
             'name'        => 'required|string|max:255',
             'serial'      => 'nullable|string|max:255',
@@ -157,45 +86,30 @@ class GlpiController extends Controller
             'comment'     => 'nullable|string',
             'entities_id' => 'nullable|integer',
         ]);
-
         try {
             $this->glpi->addItem($itemtype, array_filter($validated));
-            return redirect()
-                ->route('admin.glpi.items', $itemtype)
-                ->with('success', 'Activo creado correctamente en GLPI.');
+            return redirect()->route('admin.glpi.items', $itemtype)->with('success', 'Activo creado correctamente.');
         } catch (Exception $e) {
-            return back()->withInput()
-                ->with('error', 'Error al crear el activo: ' . $e->getMessage());
+            return back()->withInput()->with('error', 'Error al crear: ' . $e->getMessage());
         }
     }
 
-    /**
-     * Formulario de edición.
-     */
     public function edit(string $itemtype, int $id)
     {
         $assetTypes = config('glpi.asset_types');
         abort_unless(array_key_exists($itemtype, $assetTypes), 404);
-
         try {
             $item     = $this->glpi->getItem($itemtype, $id);
             $label    = $assetTypes[$itemtype];
-            $entities = $this->glpi->getEntities();
-        } catch (Exception $e) {
-            abort(404, $e->getMessage());
-        }
-
+            $entities = $this->glpi->getMyEntities();
+        } catch (Exception $e) { abort(404, $e->getMessage()); }
         return view('admin.glpi.edit', compact('item', 'itemtype', 'label', 'entities'));
     }
 
-    /**
-     * Actualiza un activo en GLPI.
-     */
     public function update(Request $request, string $itemtype, int $id)
     {
         $assetTypes = config('glpi.asset_types');
         abort_unless(array_key_exists($itemtype, $assetTypes), 404);
-
         $validated = $request->validate([
             'name'        => 'required|string|max:255',
             'serial'      => 'nullable|string|max:255',
@@ -203,15 +117,106 @@ class GlpiController extends Controller
             'comment'     => 'nullable|string',
             'entities_id' => 'nullable|integer',
         ]);
-
         try {
             $this->glpi->updateItem($itemtype, $id, array_filter($validated));
-            return redirect()
-                ->route('admin.glpi.show', [$itemtype, $id])
-                ->with('success', 'Activo actualizado correctamente.');
+            return redirect()->route('admin.glpi.show', [$itemtype, $id])->with('success', 'Activo actualizado.');
         } catch (Exception $e) {
-            return back()->withInput()
-                ->with('error', 'Error al actualizar: ' . $e->getMessage());
+            return back()->withInput()->with('error', 'Error al actualizar: ' . $e->getMessage());
         }
+    }
+
+    public function items(Request $request, string $itemtype)
+    {
+        $assetTypes = config('glpi.asset_types');
+        abort_unless(array_key_exists($itemtype, $assetTypes), 404);
+
+        $search = $request->get('search', '');
+        $label  = $assetTypes[$itemtype];
+
+        $typeField = match($itemtype) {
+            'NetworkEquipment' => 'networkequipmenttypes_id',
+            'Computer'         => 'computertypes_id',
+            'Printer'          => 'printertypes_id',
+            'Phone'            => 'phonetypes_id',
+            'Monitor'          => 'monitortypes_id',
+            'Peripheral'       => 'peripheraltypes_id',
+            default            => null,
+        };
+
+        $modelField = match($itemtype) {
+            'NetworkEquipment' => 'networkequipmentmodels_id',
+            'Computer'         => 'computermodels_id',
+            'Printer'          => 'printermodels_id',
+            'Phone'            => 'phonemodels_id',
+            'Monitor'          => 'monitormodels_id',
+            'Peripheral'       => 'peripheralmodels_id',
+            default            => null,
+        };
+
+        try {
+            $all      = $this->glpi->getAllItems($itemtype, [
+                'range'            => '0-499',
+                'expand_dropdowns' => true,
+                'get_hateoas'      => false,
+            ]);
+
+            $allItems = $all['items'] ?? [];
+            $total    = $all['total'] ?? count($allItems);
+
+            if ($search) {
+                $allItems = array_values(array_filter($allItems, fn($i) =>
+                    str_contains(strtolower($i['name'] ?? ''), strtolower($search))
+                ));
+            }
+
+            // Agrupar: tipo → modelo → { total, deposito, items[] }
+            $grouped = [];
+
+            foreach ($allItems as $item) {
+                $tipo = '';
+                if ($typeField && isset($item[$typeField])) {
+                    $v    = $item[$typeField];
+                    $tipo = is_array($v) ? ($v['name'] ?? '') : ($v ?: '');
+                }
+                $tipo = $tipo ?: 'Sin tipo';
+
+                $modelo = '';
+                if ($modelField && isset($item[$modelField])) {
+                    $v      = $item[$modelField];
+                    $modelo = is_array($v) ? ($v['name'] ?? '') : ($v ?: '');
+                }
+                $modelo = $modelo ?: 'Sin modelo';
+
+                if (!isset($grouped[$tipo][$modelo])) {
+                    $grouped[$tipo][$modelo] = ['total' => 0, 'deposito' => 0, 'items' => []];
+                }
+
+                $grouped[$tipo][$modelo]['total']++;
+                $grouped[$tipo][$modelo]['items'][] = $item;
+
+                $estado       = $item['states_id'] ?? null;
+                $estadoNombre = strtolower(is_array($estado) ? ($estado['name'] ?? '') : ($estado ?? ''));
+                if (str_contains($estadoNombre, 'dep')) {
+                    $grouped[$tipo][$modelo]['deposito']++;
+                }
+            }
+
+            // Ordenar por total desc
+            foreach ($grouped as $tipo => &$modelos) {
+                uasort($modelos, fn($a, $b) => $b['total'] - $a['total']);
+            }
+            uasort($grouped, fn($a, $b) =>
+                array_sum(array_column($b, 'total')) - array_sum(array_column($a, 'total'))
+            );
+
+        } catch (Exception $e) {
+            $grouped = [];
+            $total   = 0;
+            session()->flash('error', 'Error al conectar con GLPI: ' . $e->getMessage());
+        }
+
+        return view('admin.glpi.items', compact(
+            'grouped', 'total', 'itemtype', 'label', 'search'
+        ));
     }
 }
