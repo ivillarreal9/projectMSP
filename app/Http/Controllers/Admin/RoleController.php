@@ -40,6 +40,12 @@ class RoleController extends Controller
             'color' => 'pink',
             'icon' => 'users',
         ],
+        'glpi' => [
+            'nombre'      => 'GLPI',
+            'descripcion' => 'Inventario de activos',
+            'color'       => 'cyan',
+            'icon'        => 'server',
+        ],
         'sales' => [
             'nombre' => 'Sales',
             'descripcion' => 'Dashboard de ventas',

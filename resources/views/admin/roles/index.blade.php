@@ -168,6 +168,7 @@
                             ['slug' => 'encuestas',   'nombre' => 'Encuestas',     'desc' => 'Satisfacción clientes', 'color' => '#2563eb', 'bg' => '#eff6ff', 'icon' => 'fa-clipboard-list'],
                             ['slug' => 'usuarios',    'nombre' => 'Usuarios',      'desc' => 'Gestión de accesos',    'color' => '#a21caf', 'bg' => '#fdf4ff', 'icon' => 'fa-users'],
                             ['slug' => 'sales',       'nombre' => 'Sales',         'desc' => 'Dashboard de ventas',   'color' => '#0d9488', 'bg' => '#f0fdfa', 'icon' => 'fa-chart-line'],
+            ['slug' => 'glpi',     'nombre' => 'GLPI',         'desc' => 'Inventario de activos',  'color' => '#0891b2', 'bg' => '#ecfeff', 'icon' => 'fa-server'],
                         ];
                         @endphp
 
