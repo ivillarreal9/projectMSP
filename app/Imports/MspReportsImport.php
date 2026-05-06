@@ -49,7 +49,7 @@ class MspReportsImport implements ToModel, WithHeadingRow, WithChunkReading, Ski
         $tipoReporte         = $this->toStr($row['tipo_de_reporte'] ?? null);
         $emailCliente        = $this->toStr($row['email_cliente'] ?? null);
         $logoPath            = $this->toStr($row['logo_path'] ?? null);
-        $numeroCuenta        = $this->toStr($row['orden'] ?? null);
+        $numeroCuenta = $this->cleanFormula($row['orden'] ?? null);
 
         // Normalizado (lowercase + trim)
         $clasificacionEventos = $this->normalizeText($row['clasificacion_de_eventos'] ?? null);
@@ -181,5 +181,16 @@ class MspReportsImport implements ToModel, WithHeadingRow, WithChunkReading, Ski
         } catch (\Throwable) {
             return null;
         }
+    }
+    private function cleanFormula(mixed $value): ?string
+    {
+        $clean = $this->toStr($value);
+        if ($clean === null) return null;
+
+        // Si es fórmula Excel sin resolver → descartar
+        if (str_starts_with($clean, '=')) return null;
+
+        // Truncar por si acaso
+        return substr($clean, 0, 100);
     }
 }
