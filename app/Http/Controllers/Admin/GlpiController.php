@@ -109,129 +109,6 @@ class GlpiController extends Controller
         $assetTypes = config('glpi.asset_types');
         abort_unless(array_key_exists($itemtype, $assetTypes), 404);
 
-        $search  = $request->get('search', '');
-        $typeId  = $request->get('type_id');
-        $page    = max(1, (int) $request->get('page', 1));
-        $perPage = 4064;
-        $start   = ($page - 1) * $perPage;
-
-        try {
-            $criteria = [];
-
-            if ($typeId) {
-                $criteria[] = ['field' => 23, 'searchtype' => 'equals', 'value' => $typeId];
-            }
-
-            if ($search) {
-                $criteria[] = ['field' => 1, 'searchtype' => 'contains', 'value' => $search, 'link' => 'AND'];
-            }
-
-            if (!empty($criteria)) {
-                $result = $this->glpi->searchItems($itemtype, $criteria, [
-                    'range' => "{$start}-" . ($start + $perPage - 1),
-                ]);
-            } else {
-                $result = $this->glpi->getAllItems($itemtype, [
-                    'range' => "{$start}-" . ($start + $perPage - 1),
-                ]);
-            }
-
-            $items = $result['items'];
-            $total = $result['total'];
-        } catch (Exception $e) {
-            $items = [];
-            $total = 0;
-            session()->flash('error', 'Error al conectar con GLPI: ' . $e->getMessage());
-        }
-
-        $totalPages = $total > 0 ? ceil($total / $perPage) : 1;
-        $label      = $assetTypes[$itemtype];
-
-        return view('admin.glpi.items', compact(
-            'items', 'total', 'itemtype', 'label',
-            'search', 'page', 'totalPages', 'perPage'
-        ));
-    }
-
-    public function show(string $itemtype, int $id)
-    {
-        $assetTypes = config('glpi.asset_types');
-        abort_unless(array_key_exists($itemtype, $assetTypes), 404);
-
-        try {
-            $item  = $this->glpi->getItem($itemtype, $id);
-            $label = $assetTypes[$itemtype];
-        } catch (Exception $e) {
-            abort(404, 'Activo no encontrado: ' . $e->getMessage());
-        }
-
-        return view('admin.glpi.show', compact('item', 'itemtype', 'label'));
-    }
-
-    public function create(string $itemtype)
-    {
-        $assetTypes = config('glpi.asset_types');
-        abort_unless(array_key_exists($itemtype, $assetTypes), 404);
-        $label = $assetTypes[$itemtype];
-        try { $entities = $this->glpi->getMyEntities(); } catch (Exception) { $entities = []; }
-        return view('admin.glpi.create', compact('itemtype', 'label', 'entities'));
-    }
-
-    public function store(Request $request, string $itemtype)
-    {
-        $assetTypes = config('glpi.asset_types');
-        abort_unless(array_key_exists($itemtype, $assetTypes), 404);
-        $validated = $request->validate([
-            'name'        => 'required|string|max:255',
-            'serial'      => 'nullable|string|max:255',
-            'otherserial' => 'nullable|string|max:255',
-            'comment'     => 'nullable|string',
-            'entities_id' => 'nullable|integer',
-        ]);
-        try {
-            $this->glpi->addItem($itemtype, array_filter($validated));
-            return redirect()->route('admin.glpi.items', $itemtype)->with('success', 'Activo creado correctamente.');
-        } catch (Exception $e) {
-            return back()->withInput()->with('error', 'Error al crear: ' . $e->getMessage());
-        }
-    }
-
-    public function edit(string $itemtype, int $id)
-    {
-        $assetTypes = config('glpi.asset_types');
-        abort_unless(array_key_exists($itemtype, $assetTypes), 404);
-        try {
-            $item     = $this->glpi->getItem($itemtype, $id);
-            $label    = $assetTypes[$itemtype];
-            $entities = $this->glpi->getMyEntities();
-        } catch (Exception $e) { abort(404, $e->getMessage()); }
-        return view('admin.glpi.edit', compact('item', 'itemtype', 'label', 'entities'));
-    }
-
-    public function update(Request $request, string $itemtype, int $id)
-    {
-        $assetTypes = config('glpi.asset_types');
-        abort_unless(array_key_exists($itemtype, $assetTypes), 404);
-        $validated = $request->validate([
-            'name'        => 'required|string|max:255',
-            'serial'      => 'nullable|string|max:255',
-            'otherserial' => 'nullable|string|max:255',
-            'comment'     => 'nullable|string',
-            'entities_id' => 'nullable|integer',
-        ]);
-        try {
-            $this->glpi->updateItem($itemtype, $id, array_filter($validated));
-            return redirect()->route('admin.glpi.show', [$itemtype, $id])->with('success', 'Activo actualizado.');
-        } catch (Exception $e) {
-            return back()->withInput()->with('error', 'Error al actualizar: ' . $e->getMessage());
-        }
-    }
-
-    public function items(Request $request, string $itemtype)
-    {
-        $assetTypes = config('glpi.asset_types');
-        abort_unless(array_key_exists($itemtype, $assetTypes), 404);
-
         $search = $request->get('search', '');
         $label  = $assetTypes[$itemtype];
 
@@ -321,4 +198,79 @@ class GlpiController extends Controller
             'grouped', 'total', 'itemtype', 'label', 'search'
         ));
     }
+
+    public function show(string $itemtype, int $id)
+    {
+        $assetTypes = config('glpi.asset_types');
+        abort_unless(array_key_exists($itemtype, $assetTypes), 404);
+
+        try {
+            $item  = $this->glpi->getItem($itemtype, $id);
+            $label = $assetTypes[$itemtype];
+        } catch (Exception $e) {
+            abort(404, 'Activo no encontrado: ' . $e->getMessage());
+        }
+
+        return view('admin.glpi.show', compact('item', 'itemtype', 'label'));
+    }
+
+    public function create(string $itemtype)
+    {
+        $assetTypes = config('glpi.asset_types');
+        abort_unless(array_key_exists($itemtype, $assetTypes), 404);
+        $label = $assetTypes[$itemtype];
+        try { $entities = $this->glpi->getMyEntities(); } catch (Exception) { $entities = []; }
+        return view('admin.glpi.create', compact('itemtype', 'label', 'entities'));
+    }
+
+    public function store(Request $request, string $itemtype)
+    {
+        $assetTypes = config('glpi.asset_types');
+        abort_unless(array_key_exists($itemtype, $assetTypes), 404);
+        $validated = $request->validate([
+            'name'        => 'required|string|max:255',
+            'serial'      => 'nullable|string|max:255',
+            'otherserial' => 'nullable|string|max:255',
+            'comment'     => 'nullable|string',
+            'entities_id' => 'nullable|integer',
+        ]);
+        try {
+            $this->glpi->addItem($itemtype, array_filter($validated));
+            return redirect()->route('admin.glpi.items', $itemtype)->with('success', 'Activo creado correctamente.');
+        } catch (Exception $e) {
+            return back()->withInput()->with('error', 'Error al crear: ' . $e->getMessage());
+        }
+    }
+
+    public function edit(string $itemtype, int $id)
+    {
+        $assetTypes = config('glpi.asset_types');
+        abort_unless(array_key_exists($itemtype, $assetTypes), 404);
+        try {
+            $item     = $this->glpi->getItem($itemtype, $id);
+            $label    = $assetTypes[$itemtype];
+            $entities = $this->glpi->getMyEntities();
+        } catch (Exception $e) { abort(404, $e->getMessage()); }
+        return view('admin.glpi.edit', compact('item', 'itemtype', 'label', 'entities'));
+    }
+
+    public function update(Request $request, string $itemtype, int $id)
+    {
+        $assetTypes = config('glpi.asset_types');
+        abort_unless(array_key_exists($itemtype, $assetTypes), 404);
+        $validated = $request->validate([
+            'name'        => 'required|string|max:255',
+            'serial'      => 'nullable|string|max:255',
+            'otherserial' => 'nullable|string|max:255',
+            'comment'     => 'nullable|string',
+            'entities_id' => 'nullable|integer',
+        ]);
+        try {
+            $this->glpi->updateItem($itemtype, $id, array_filter($validated));
+            return redirect()->route('admin.glpi.show', [$itemtype, $id])->with('success', 'Activo actualizado.');
+        } catch (Exception $e) {
+            return back()->withInput()->with('error', 'Error al actualizar: ' . $e->getMessage());
+        }
+    }
+
 }
