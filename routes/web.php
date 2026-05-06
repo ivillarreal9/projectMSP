@@ -162,11 +162,13 @@ Route::middleware(['auth', 'module:sales'])
         Route::get('/',                [SalesDashboardController::class,  'index'])->name('index');
         Route::get('/pipeline',        [SalesPipelineController::class,   'index'])->name('pipeline');
         Route::get('/clients',         [SalesClientsController::class,    'index'])->name('clients');
-        Route::get('/executives',      [SalesExecutivesController::class, 'index'])->name('executives');
-        Route::get('/executives/{id}', [SalesExecutivesController::class, 'show'])->name('executives.show');
+        Route::get('/executives',        [SalesExecutivesController::class, 'index'])->name('executives');
+        Route::get('/executives/data',   [SalesExecutivesController::class, 'data'])->name('executives.data');  // ← nuevo
+        Route::get('/executives/{id}',   [SalesExecutivesController::class, 'show'])->name('executives.show');
         Route::get('/reassign',        [SalesReassignController::class,   'index'])->name('reassign');
         Route::post('/reassign/export',[SalesReassignController::class,   'export'])->name('reassign.export');
-        Route::get('/overview',        [SalesOverviewController::class,   'index'])->name('overview');
+        Route::get('/overview',             [SalesOverviewController::class, 'index'])       ->name('overview');
+        Route::get('/overview/commissions', [SalesOverviewController::class, 'commissions']) ->name('overview.commissions');
     });
 
 // ─── 2FA Setup (primera vez) ──────────────────────────────────────────────────
