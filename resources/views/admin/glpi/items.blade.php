@@ -10,7 +10,7 @@
                     <span class="text-gray-700 dark:text-gray-300 font-medium">{{ $label }}</span>
                 </nav>
                 <h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">{{ $label }}</h2>
-                <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{{ number_format($total) }} registros encontrados</p>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{{ number_format($total) }} registros totales</p>
             </div>
             <a href="{{ route('admin.glpi.create', $itemtype) }}"
                class="inline-flex items-center gap-2 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold rounded-lg transition">
@@ -25,14 +25,8 @@
     <div class="py-10">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5">
 
-            {{-- Alertas --}}
-            @if(session('success'))
-                <div class="p-4 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 rounded-xl text-sm text-green-700 dark:text-green-400">
-                    {{ session('success') }}
-                </div>
-            @endif
             @if(session('error'))
-                <div class="p-4 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 rounded-xl text-sm text-red-700 dark:text-red-400">
+                <div class="p-4 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 rounded-xl text-sm text-red-700 dark:text-red-400 mb-6">
                     {{ session('error') }}
                 </div>
             @endif
