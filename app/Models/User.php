@@ -46,6 +46,9 @@ class User extends Authenticatable
     public function canAccessModule(string $slug): bool
     {
         if ($this->isAdmin()) return true;
+
+        $this->loadMissing('roleModel');
+
         return $this->roleModel?->hasModule($slug) ?? false;
     }
 
@@ -77,5 +80,18 @@ class User extends Authenticatable
             return ['msp_reports', 'api_msp', 'meta2', 'encuestas', 'usuarios', 'sales'];
         }
         return $this->roleModel?->modulos ?? [];
+    }
+
+    protected static function booted(): void
+    {
+        // ✅ Sincroniza el campo role (legacy) con el slug del rol dinámico
+        static::saving(function ($user) {
+            if ($user->isDirty('role_id') && $user->role_id) {
+                $role = \App\Models\Role::find($user->role_id);
+                if ($role) {
+                    $user->role = $role->slug;
+                }
+            }
+        });
     }
 }

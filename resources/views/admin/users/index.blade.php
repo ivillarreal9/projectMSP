@@ -48,6 +48,7 @@
                 <div class="px-6 py-4 border-b border-gray-100 dark:border-gray-700">
                     <form method="GET" action="{{ route('admin.users.index') }}"
                           class="flex flex-col sm:flex-row gap-3">
+
                         {{-- Buscar nombre --}}
                         <div class="relative flex-1">
                             <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -58,13 +59,15 @@
                                    class="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500">
                         </div>
 
-                        {{-- Filtro Rol --}}
-                        <select name="role"
+                        {{-- ✅ Filtro Rol — dinámico desde DB --}}
+                        <select name="role_id"
                                 class="text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500">
                             <option value="">Rol (Todos)</option>
-                            <option value="admin"  {{ request('role') === 'admin'  ? 'selected' : '' }}>Admin</option>
-                            <option value="editor" {{ request('role') === 'editor' ? 'selected' : '' }}>Editor</option>
-                            <option value="user"   {{ request('role') === 'user'   ? 'selected' : '' }}>Usuario</option>
+                            @foreach($roles as $role)
+                                <option value="{{ $role->id }}" {{ request('role_id') == $role->id ? 'selected' : '' }}>
+                                    {{ $role->nombre }}
+                                </option>
+                            @endforeach
                         </select>
 
                         {{-- Botón filtrar --}}
@@ -74,7 +77,7 @@
                         </button>
 
                         {{-- Limpiar --}}
-                        @if(request('search') || request('role'))
+                        @if(request('search') || request('role_id'))
                             <a href="{{ route('admin.users.index') }}"
                                class="inline-flex items-center justify-center px-4 py-2 border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm rounded-lg transition">
                                 Limpiar
@@ -102,20 +105,34 @@
                                 {{-- Usuario --}}
                                 <td class="px-6 py-4">
                                     <div class="flex items-center gap-3">
+                                        {{-- ✅ Avatar color basado en si tiene rol dinámico o es admin legacy --}}
                                         <div class="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0
-                                            {{ $user->role === 'admin' ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400' }}">
+                                            {{ $user->role === 'admin' || $user->roleModel ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400' }}">
                                             {{ strtoupper(substr($user->name, 0, 2)) }}
                                         </div>
                                         <div>
                                             <p class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ $user->name }}</p>
-                                            <p class="text-xs text-gray-400 dark:text-gray-500">({{ $user->email }})</p>
+                                            <p class="text-xs text-gray-400 dark:text-gray-500">{{ $user->email }}</p>
                                         </div>
                                     </div>
                                 </td>
 
-                                {{-- Rol --}}
-                                <td class="px-6 py-4 text-sm text-gray-700 dark:text-gray-300 font-medium">
-                                    {{ ucfirst($user->role) }}
+                                {{-- ✅ Rol — prioriza el rol dinámico, fallback al legacy --}}
+                                <td class="px-6 py-4">
+                                    @if($user->roleModel)
+                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-800">
+                                            <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+                                            </svg>
+                                            {{ $user->roleModel->nombre }}
+                                        </span>
+                                    @elseif($user->role)
+                                        <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-600">
+                                            {{ ucfirst($user->role) }}
+                                        </span>
+                                    @else
+                                        <span class="text-xs text-gray-400 dark:text-gray-500 italic">Sin rol</span>
+                                    @endif
                                 </td>
 
                                 {{-- Estado --}}
@@ -145,20 +162,16 @@
                                 {{-- Acciones --}}
                                 <td class="px-6 py-4">
                                     <div class="flex items-center justify-end gap-3">
-                                        {{-- Editar --}}
                                         <a href="{{ route('admin.users.edit', $user) }}"
-                                           class="flex flex-col items-center gap-0.5 text-gray-400 hover:text-indigo-600 transition"
-                                           title="Editar">
+                                           class="flex flex-col items-center gap-0.5 text-gray-400 hover:text-indigo-600 transition" title="Editar">
                                             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
                                             </svg>
                                             <span class="text-xs">Editar</span>
                                         </a>
 
-                                        {{-- Ver --}}
                                         <a href="{{ route('admin.users.show', $user) }}"
-                                           class="flex flex-col items-center gap-0.5 text-gray-400 hover:text-blue-600 transition"
-                                           title="Ver">
+                                           class="flex flex-col items-center gap-0.5 text-gray-400 hover:text-blue-600 transition" title="Ver">
                                             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
@@ -166,7 +179,6 @@
                                             <span class="text-xs">Ver</span>
                                         </a>
 
-                                        {{-- Eliminar --}}
                                         @if($user->id !== auth()->id())
                                         <form action="{{ route('admin.users.destroy', $user) }}" method="POST"
                                               onsubmit="return confirm('¿Eliminar a {{ addslashes($user->name) }}?')">
