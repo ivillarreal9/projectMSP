@@ -78,10 +78,49 @@ class CommissionService
         ];
     }
 
+    public function getByYear(string $year): array
+    {
+        $cacheKey = "commissions:year:{$year}";
+
+        return Cache::remember($cacheKey, self::CACHE_TTL, function () use ($year) {
+
+            $domain = [
+                ['year_comission',            '=', $year],
+                ['to_invoice_button_clicked', '=', true],
+                ['state',  '!=', 'cancel'],
+            ];
+
+            $records = $this->odoo->execute('sale.order', 'search_read',
+                [$domain],
+                [
+                    'fields' => [
+                        'name', 'year_comission', 'month_comission',
+                        'state', 'user_id', 'amount_total',
+                        'total_otf', 'total_mrc', 'partner_id', 'date_order',
+                    ],
+                    'order' => 'date_order desc',
+                    'limit' => 0,
+                ]
+            ) ?? [];
+
+            return $this->process($records);
+        });
+    }
+
     // ── Caché ─────────────────────────────────────────────────
+
+    public function clearCacheYear(string $year): void
+    {
+        Cache::forget("commissions:year:{$year}");
+    }
 
     public function clearCache(string $year, string $month): void
     {
         Cache::forget("commissions:period:{$year}:{$month}");
+    }
+    
+    public function odoo(): OdooService
+    {
+        return $this->odoo;
     }
 }

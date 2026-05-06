@@ -3,53 +3,78 @@
 namespace App\Http\Controllers\Admin\Sales;
 
 use App\Http\Controllers\Controller;
-use App\Services\Sales\OdooService;
-use App\Services\Sales\CommissionService;  // ← nuevo
+use App\Services\Sales\CommissionService;
 use Carbon\Carbon;
 
 class SalesOverviewController extends Controller
 {
-    public function index(OdooService $odoo, CommissionService $commissions)  // ← inyectar
+    public function index()
     {
-        $year  = (int) request('year',  now()->year);
-        $month = (int) request('month', now()->month);
-
+        $mode           = request('mode', 'mes');
         $availableYears = range(now()->year, now()->year - 3);
 
-        $dateFrom = Carbon::create($year, $month, 1)->startOfMonth()->format('Y-m-d H:i:s');
-        $dateTo   = Carbon::create($year, $month, 1)->endOfMonth()->format('Y-m-d H:i:s');
+        return view('admin.sales.overview.overview', compact('mode', 'availableYears'));
+    }
 
-        $prevMonth = Carbon::create($year, $month, 1)->subMonth();
-        $prevFrom  = $prevMonth->copy()->startOfMonth()->format('Y-m-d H:i:s');
-        $prevTo    = $prevMonth->copy()->endOfMonth()->format('Y-m-d H:i:s');
+    public function commissions(CommissionService $commissions)
+    {
+        $mode = request('mode', 'mes');
+        $year = (string) now()->year;
 
-        $yearFrom = Carbon::create($year, 1, 1)->startOfYear()->format('Y-m-d H:i:s');
-        $yearTo   = Carbon::create($year, 12, 31)->endOfYear()->format('Y-m-d H:i:s');
+        if ($mode === 'acumulado') {
+            $data   = $commissions->getByYear($year);
+            $label  = 'Acumulado ' . $year;
+        } else {
+            $period = Carbon::now()->subMonth();
+            $data   = $commissions->getByPeriod((string) $period->year, (string) $period->month);
+            $label  = $period->translatedFormat('F Y');
+        }
 
-        $kpis            = $odoo->getDashboardKpis($dateFrom, $dateTo);
-        $monthlyData     = $odoo->getMonthlyTrend($year);
-        $byExecutive     = $odoo->getStatsByExecutive($dateFrom, $dateTo);
-        $byExecutivePrev = $odoo->getStatsByExecutive($prevFrom, $prevTo);
-        $byExecutiveYear = $odoo->getStatsByExecutive($yearFrom, $yearTo);
+        $vendedorIds = collect($data['by_vendedor'] ?? [])
+            ->pluck('vendedor_id')
+            ->filter(fn($id) => is_int($id) && $id > 0)
+            ->values()
+            ->all();
 
-        // ── Comisiones — mes anterior ─────────────────────────
-        $commissionPeriod = Carbon::create($year, $month, 1)->subMonth();
-        $commissionData   = $commissions->getByPeriod(
-            (string) $commissionPeriod->year,
-            (string) $commissionPeriod->month
-        );
+        $userImages = [];
+        if (!empty($vendedorIds)) {
+            $users = $commissions->odoo()->execute('res.users', 'search_read',
+                [[['id', 'in', $vendedorIds]]],
+                ['fields' => ['id', 'image_128'], 'limit' => 50]
+            ) ?? [];
 
-        return view('admin.sales.overview.overview', compact(
-            'kpis',
-            'monthlyData',
-            'byExecutive',
-            'byExecutivePrev',
-            'byExecutiveYear',
-            'commissionData',      // ← era $commissions, ahora $commissionData
-            'commissionPeriod',    // ← para el label en la vista
-            'year',
-            'month',
-            'availableYears',
-        ));
+            foreach ($users as $u) {
+                $img = $u['image_128'] ?? null;
+                $userImages[$u['id']] = ($img && !str_starts_with($img, 'PD94'))
+                    ? 'data:image/png;base64,' . $img
+                    : null;
+            }
+        }
+
+        $toJs = function ($byVendedor, string $tipo) use ($userImages): array {
+            return collect($byVendedor)
+                ->sortByDesc($tipo)
+                ->values()
+                ->map(fn($v) => [
+                    'name'     => $v['vendedor_name'],
+                    'short'    => collect(explode(' ', $v['vendedor_name']))->first(),
+                    'initials' => collect(explode(' ', $v['vendedor_name']))->take(2)
+                                    ->map(fn($w) => strtoupper(substr($w, 0, 1)))->join(''),
+                    'revenue'  => round($v[$tipo], 2),
+                    'cantidad' => $v['cantidad'],
+                    'image'    => $userImages[$v['vendedor_id']] ?? null,
+                ])
+                ->all();
+        };
+
+        return response()->json([
+            'periodoComisiones' => $label,
+            'totalOtf'          => $data['total_otf']  ?? 0,
+            'totalMrc'          => $data['total_mrc']  ?? 0,
+            'totalComis'        => $data['total']      ?? 0,
+            'cantidadOrd'       => $data['cantidad']   ?? 0,
+            'dataOtf'           => $toJs($data['by_vendedor'] ?? [], 'total_otf'),
+            'dataMrc'           => $toJs($data['by_vendedor'] ?? [], 'total_mrc'),
+        ]);
     }
 }
