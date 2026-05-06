@@ -41,14 +41,116 @@ class GlpiController extends Controller
 
         foreach ($assetTypes as $type => $label) {
             try {
-                $result = $this->glpi->getAllItems($type, ['range' => '0-1']);
-                $summary[$type] = ['label' => $label, 'total' => $result['total']];
+                if ($type === 'NetworkEquipment') {
+                    // ── 1. Traer todos los tipos de equipo de red ──────────────
+                    $typesResult = $this->glpi->getAllItems('NetworkEquipmentType', [
+                        'range' => '0-199',
+                        'sort'  => 'name',
+                        'order' => 'ASC',
+                    ]);
+
+                    $grouped = [];
+                    foreach ($typesResult['items'] as $equipType) {
+                        try {
+                            // ── 2. Contar equipos de cada tipo ─────────────────
+                            $count = $this->glpi->searchItems('NetworkEquipment', [
+                                ['field' => 23, 'searchtype' => 'equals', 'value' => $equipType['id']],
+                            ], ['range' => '0-0']);
+
+                            $total = $count['total'] ?? 0;
+
+                            if ($total > 0) {
+                                // ── 3. Contar cuántos están en depósito ────────
+                                $deposito = $this->glpi->searchItems('NetworkEquipment', [
+                                    ['field' => 23, 'searchtype' => 'equals',   'value' => $equipType['id']],
+                                    ['field' => 31, 'searchtype' => 'contains', 'value' => 'dep',
+                                     'link'  => 'AND'],
+                                ], ['range' => '0-0']);
+
+                                $grouped[] = [
+                                    'id'          => $equipType['id'],
+                                    'nombre'      => $equipType['name'],
+                                    'total'       => $total,
+                                    'en_deposito' => $deposito['total'] ?? 0,
+                                ];
+                            }
+                        } catch (Exception) {
+                            // Si falla un tipo, continuar con el siguiente
+                        }
+                    }
+
+                    // Total general de NetworkEquipment
+                    $totalResult = $this->glpi->getAllItems($type, ['range' => '0-0']);
+
+                    $summary[$type] = [
+                        'label'   => $label,
+                        'total'   => $totalResult['total'],
+                        'grouped' => $grouped,
+                    ];
+
+                } else {
+                    $result = $this->glpi->getAllItems($type, ['range' => '0-0']);
+                    $summary[$type] = [
+                        'label'   => $label,
+                        'total'   => $result['total'],
+                        'grouped' => null,
+                    ];
+                }
             } catch (Exception) {
-                $summary[$type] = ['label' => $label, 'total' => 0];
+                $summary[$type] = ['label' => $label, 'total' => 0, 'grouped' => null];
             }
         }
 
         return view('admin.glpi.index', compact('summary'));
+    }
+
+    public function items(Request $request, string $itemtype)
+    {
+        $assetTypes = config('glpi.asset_types');
+        abort_unless(array_key_exists($itemtype, $assetTypes), 404);
+
+        $search  = $request->get('search', '');
+        $typeId  = $request->get('type_id');
+        $page    = max(1, (int) $request->get('page', 1));
+        $perPage = 4064;
+        $start   = ($page - 1) * $perPage;
+
+        try {
+            $criteria = [];
+
+            if ($typeId) {
+                $criteria[] = ['field' => 23, 'searchtype' => 'equals', 'value' => $typeId];
+            }
+
+            if ($search) {
+                $criteria[] = ['field' => 1, 'searchtype' => 'contains', 'value' => $search, 'link' => 'AND'];
+            }
+
+            if (!empty($criteria)) {
+                $result = $this->glpi->searchItems($itemtype, $criteria, [
+                    'range' => "{$start}-" . ($start + $perPage - 1),
+                ]);
+            } else {
+                $result = $this->glpi->getAllItems($itemtype, [
+                    'range' => "{$start}-" . ($start + $perPage - 1),
+                ]);
+            }
+
+            $items = $result['items'];
+            $total = $result['total'];
+        } catch (Exception $e) {
+            $items = [];
+            $total = 0;
+            session()->flash('error', 'Error al conectar con GLPI: ' . $e->getMessage());
+        }
+
+        $totalPages = $total > 0 ? ceil($total / $perPage) : 1;
+        $label      = $assetTypes[$itemtype];
+
+        return view('admin.glpi.items', compact(
+            'items', 'total', 'itemtype', 'label',
+            'search', 'page', 'totalPages', 'perPage'
+        ));
     }
 
     public function show(string $itemtype, int $id)

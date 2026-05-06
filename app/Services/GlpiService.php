@@ -27,13 +27,11 @@ class GlpiService
             return $cached;
         }
 
-        $response = Http::withoutVerifying()->withHeaders([
-            
-            'App-Token'     => $this->appToken,
-            'Content-Type'  => 'application/json',
-        ])->get("{$this->baseUrl}/initSession", [
-            'user_token' => $this->userToken,
-        ]);
+        $response = Http::withoutVerifying()
+            ->withHeaders([
+                'Authorization' => 'user_token ' . $this->userToken,
+                'App-Token'     => $this->appToken,
+            ])->get("{$this->baseUrl}/initSession");
 
         if ($response->failed()) {
             throw new Exception('GLPI: No se pudo iniciar sesión. ' . $response->body());
