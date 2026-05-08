@@ -568,7 +568,7 @@ Para cualquier otra consulta responde en español de forma clara y concisa.";
 
             // Payload SendGrid
             $sendgridKey = config('services.sendgrid.api_key');
-            $fromEmail   = config('services.sendgrid.from', 'ivillarreal@ovni.com');
+            $fromEmail   = config('services.sendgrid.from', 'yalveo@ovni.com');
 
             if (empty($sendgridKey)) {
                 return ['success' => false, 'error' => 'SENDGRID_API_KEY no configurado en .env'];

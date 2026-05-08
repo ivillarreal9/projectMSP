@@ -66,6 +66,6 @@ return [
 
     'sendgrid' => [
         'api_key' => env('SENDGRID_API_KEY'),
-        'from'    => env('SENDGRID_FROM', 'ivillarreal@ovni.com'),
+        'from'    => env('SENDGRID_FROM', 'yalveo@ovni.com'),
     ],
 ];
