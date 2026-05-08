@@ -383,7 +383,7 @@
         charts.dona = new Chart(document.getElementById('chartDona'), {
             type: 'doughnut',
             data: { labels:['OTF','MRC'], datasets:[{ data:[totalOtf,totalMrc], backgroundColor:['rgba(249,115,22,0.85)','rgba(20,184,166,0.85)'], borderWidth:3, borderColor: isDark?'#1f2937':'#ffffff', hoverOffset:8 }] },
-            options: { responsive:false, maintainAspectRatio:false, cutout:'72%',
+            options: { responsive:false, maintainAspectRatio:false, cutout:'55%',
                 plugins: { legend:{display:false}, tooltip:{ callbacks:{ label: ctx=>` ${ctx.label}: ${fmtFull(ctx.raw)}` }} },
                 onHover: (e,els) => {
                     const lbl=document.getElementById('dona-label'), tot=document.getElementById('dona-total');
