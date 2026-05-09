@@ -6,10 +6,10 @@ use Illuminate\Support\Facades\Http;
 
 class OdooService
 {
-    private $url;
-    private $db;
-    private $username;
-    private $apiKey;
+    protected string $url;
+    protected string $db;
+    protected string $username;
+    protected string $apiKey;
 
     public function __construct()
     {
@@ -19,7 +19,7 @@ class OdooService
         $this->apiKey = env('ODOO_API_KEY');
     }
 
-    private function call($service, $method, $args)
+    protected function call($service, $method, $args)
     {
         $response = Http::post($this->url, [
             "jsonrpc" => "2.0",
