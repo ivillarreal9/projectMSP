@@ -8,6 +8,10 @@ class TwoFactorMiddleware
 {
     public function handle(Request $request, Closure $next): Response
     {
+        if (app()->environment('local')) {
+            return $next($request);
+        }
+
         $user = Auth::user();
 
         if (!$user) {
@@ -37,6 +41,13 @@ class TwoFactorMiddleware
 
         // Verificar que el 2FA fue validado en esta sesión
         if (!session('2fa_verified')) {
+            // Log out the user before redirecting to avoid a redirect loop:
+            // authenticated + no 2fa_verified + no 2fa_user_id causes:
+            // /2fa/verify → /login (RedirectIfAuthenticated) → /dashboard → /2fa/verify → ...
+            $userId = $user->id;
+            Auth::logout();
+            session()->put('2fa_user_id', $userId);
+            session()->save();
             return redirect()->route('2fa.verify');
         }
 
