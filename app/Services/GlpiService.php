@@ -28,6 +28,18 @@ class GlpiService
         }
 
         $response = Http::withoutVerifying()
+            ->withOptions([
+                'allow_redirects' => [
+                    'max'             => 5,
+                    'protocols'       => ['http', 'https'],
+                    'strict'          => true,   // keep method (GET stays GET)
+                    'referer'         => false,
+                    'track_redirects' => false,
+                ],
+                'curl' => [
+                    CURLOPT_UNRESTRICTED_AUTH => true, // preserve Authorization on redirect
+                ],
+            ])
             ->withHeaders([
                 'Authorization' => 'user_token ' . $this->userToken,
                 'App-Token'     => $this->appToken,
