@@ -117,6 +117,7 @@ class SyncMspClientsFromOdoo extends Command
 
         foreach (array_chunk($payload, $chunk) as $lote) {
             $response = Http::withToken($token)
+                ->withoutVerifying()
                 ->timeout(30)
                 ->post($apiUrl, ['clients' => $lote]);
 
