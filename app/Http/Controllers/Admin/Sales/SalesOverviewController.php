@@ -22,8 +22,8 @@ class SalesOverviewController extends Controller
         $year = (string) now()->year;
 
         if ($mode === 'acumulado') {
-            $data   = $commissions->getByYear($year);
-            $label  = 'Acumulado ' . $year;
+            $data  = $commissions->getByYear($year);
+            $label = 'Acumulado ' . $year;
         } elseif ($mode === 'mes_actual') {
             $period = Carbon::now();
             $data   = $commissions->getByPeriod((string) $period->year, (string) $period->month);
@@ -64,7 +64,7 @@ class SalesOverviewController extends Controller
                     'short'    => collect(explode(' ', $v['vendedor_name']))->first(),
                     'initials' => collect(explode(' ', $v['vendedor_name']))->take(2)
                                     ->map(fn($w) => strtoupper(substr($w, 0, 1)))->join(''),
-                    'revenue'  => round($v[$tipo], 2),
+                    'revenue'  => $v[$tipo],
                     'cantidad' => $v['cantidad'],
                     'image'    => $userImages[$v['vendedor_id']] ?? null,
                 ])
@@ -73,10 +73,10 @@ class SalesOverviewController extends Controller
 
         return response()->json([
             'periodoComisiones' => $label,
-            'totalOtf'          => $data['total_otf']  ?? 0,
-            'totalMrc'          => $data['total_mrc']  ?? 0,
-            'totalComis'        => $data['total']      ?? 0,
-            'cantidadOrd'       => $data['cantidad']   ?? 0,
+            'totalOtf'          => $data['total_otf'] ?? 0,
+            'totalMrc'          => $data['total_mrc'] ?? 0,
+            'totalComis'        => $data['total']     ?? 0,
+            'cantidadOrd'       => $data['cantidad']  ?? 0,
             'dataOtf'           => $toJs($data['by_vendedor'] ?? [], 'total_otf'),
             'dataMrc'           => $toJs($data['by_vendedor'] ?? [], 'total_mrc'),
         ]);
