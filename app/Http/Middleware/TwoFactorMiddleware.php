@@ -18,6 +18,11 @@ class TwoFactorMiddleware
             return $next($request);
         }
 
+        // SSO Microsoft omite el 2FA — Microsoft ya autenticó al usuario
+        if (session('sso_login')) {
+            return $next($request);
+        }
+
         // Rutas que siempre se permiten sin 2FA (solo las estrictamente necesarias)
         $allowedRoutes = [
             '2fa.setup',

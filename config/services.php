@@ -58,6 +58,13 @@ return [
         'folder_id'     => env('SHAREPOINT_FOLDER_ID'),  // ← agregar
     ],
 
+    'azure' => [
+        'client_id'     => env('AZURE_CLIENT_ID'),
+        'client_secret' => env('AZURE_CLIENT_SECRET'),
+        'redirect'      => env('APP_URL') . '/auth/microsoft/callback',
+        'tenant'        => env('AZURE_TENANT_ID'),
+    ],
+
     'msp' => [
         'username' => env('MSP_USERNAME'),
         'password' => env('MSP_PASSWORD'),

@@ -22,6 +22,7 @@ use App\Http\Controllers\Admin\SurveyController;
 use App\Http\Controllers\Admin\GlpiController;
 use App\Http\Controllers\Admin\MerakiController;
 use App\Http\Controllers\Auth\TwoFactorController;
+use App\Http\Controllers\Auth\MicrosoftAuthController;
 use App\Http\Controllers\Admin\SincronizarController;
 use Illuminate\Support\Facades\Route;
 
@@ -203,6 +204,10 @@ Route::middleware(['auth'])
         Route::post('sincronizar/ejecutar',         [SincronizarController::class, 'ejecutar'])->name('sincronizar.ejecutar.post');
         Route::post('sincronizar/enlazar',          [SincronizarController::class, 'enlazar'])->name('sincronizar.enlazar');
     });
+
+// ─── Microsoft SSO ───────────────────────────────────────────────────────────
+Route::get('/auth/microsoft',          [MicrosoftAuthController::class, 'redirect'])->name('auth.microsoft');
+Route::get('/auth/microsoft/callback', [MicrosoftAuthController::class, 'callback'])->name('auth.microsoft.callback');
 
 // ─── 2FA Setup (primera vez) ──────────────────────────────────────────────────
 Route::middleware('auth')->group(function () {
