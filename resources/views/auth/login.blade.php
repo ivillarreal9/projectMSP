@@ -52,6 +52,28 @@
                     Iniciar sesión
                 </button>
             </form>
+
+            {{-- Separador --}}
+            <div class="flex items-center gap-3 my-5">
+                <div class="flex-1 h-px bg-gray-800"></div>
+                <span class="text-xs text-gray-600 font-medium">o continúa con</span>
+                <div class="flex-1 h-px bg-gray-800"></div>
+            </div>
+
+            {{-- Botón Microsoft SSO --}}
+            <a href="{{ route('auth.microsoft') }}"
+               class="flex items-center justify-center gap-3 w-full py-2.5 px-4
+                      bg-gray-800 hover:bg-gray-700 border border-gray-700 hover:border-gray-600
+                      text-white font-semibold rounded-xl transition text-sm">
+                {{-- Logo Microsoft --}}
+                <svg width="18" height="18" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="1" y="1" width="9" height="9" fill="#F25022"/>
+                    <rect x="11" y="1" width="9" height="9" fill="#7FBA00"/>
+                    <rect x="1" y="11" width="9" height="9" fill="#00A4EF"/>
+                    <rect x="11" y="11" width="9" height="9" fill="#FFB900"/>
+                </svg>
+                Entrar con Microsoft
+            </a>
         </div>
     </div>
 </body>
