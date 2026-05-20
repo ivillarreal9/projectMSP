@@ -16,6 +16,12 @@
 
             @include('admin.sincronizar.partials.nav')
 
+            @if (session('success'))
+                <div class="rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 px-4 py-3 text-sm text-green-700 dark:text-green-400">
+                    {{ session('success') }}
+                </div>
+            @endif
+
             @if (session('error'))
                 <div class="rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-4 py-3 text-sm text-red-700 dark:text-red-400">
                     {{ session('error') }}

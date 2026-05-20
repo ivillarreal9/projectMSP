@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
 class Meta2Service
@@ -43,7 +44,7 @@ class Meta2Service
             throw new \Exception('No hay credenciales MSP configuradas.');
         }
 
-        $this->baseUrl    = $baseUrl;
+        $this->baseUrl    = (string) $baseUrl;
         $this->authHeader = 'Basic ' . base64_encode($username . ':' . $password);
     }
 
@@ -61,24 +62,32 @@ class Meta2Service
         return $response->json('value') ?? [];
     }
 
+    private const CACHE_IDS     = 86400;  // 24 horas — IDs de un mes cerrado no cambian
+    private const CACHE_TICKETS = 86400;  // 24 horas — detalle de tickets
+    private const CACHE_CF      = 172800; // 48 horas — custom fields de tickets cerrados
+    private const CACHE_PDF     = 172800; // 48 horas — datos del PDF (histórico, no cambia)
+    private const CACHE_ALL     = 86400;  // 24 horas — listado completo de Telefonía
+
     /**
      * Paso 1 — Obtener solo los IDs de tickets de Telefonía del mes/año
      */
     public function getTelefoniaIds(int $month, int $year): array
     {
-        $startDate = \Carbon\Carbon::createFromDate($year, $month, 1)
-            ->startOfDay()->format('Y-m-d\TH:i:s\Z');
+        return Cache::remember("meta2:ids:{$year}:{$month}", self::CACHE_IDS, function () use ($month, $year) {
+            $startDate = \Carbon\Carbon::createFromDate($year, $month, 1)
+                ->startOfDay()->format('Y-m-d\TH:i:s\Z');
 
-        $endDate = \Carbon\Carbon::createFromDate($year, $month, 1)
-            ->endOfMonth()->endOfDay()->format('Y-m-d\TH:i:s\Z');
+            $endDate = \Carbon\Carbon::createFromDate($year, $month, 1)
+                ->endOfMonth()->endOfDay()->format('Y-m-d\TH:i:s\Z');
 
-        $filter = "TicketIssueTypeName eq 'Telefonía'" .
-                  " and CompletedDate ge {$startDate}" .
-                  " and CompletedDate le {$endDate}";
+            $filter = "TicketIssueTypeName eq 'Telefonía'" .
+                      " and CompletedDate ge {$startDate}" .
+                      " and CompletedDate le {$endDate}";
 
-        $tickets = $this->get("/ticketsview?\$filter={$filter}&\$select=TicketId");
+            $tickets = $this->get("/ticketsview?\$filter={$filter}&\$select=TicketId");
 
-        return array_column($tickets, 'TicketId');
+            return array_column($tickets, 'TicketId');
+        });
     }
 
     /**
@@ -88,13 +97,17 @@ class Meta2Service
     {
         if (empty($ids)) return [];
 
-        $idList = implode(',', $ids);
+        $cacheKey = 'meta2:tickets:' . md5(implode(',', $ids));
 
-        return $this->get(
-            "/ticketsview?\$filter=TicketId in ({$idList})" .
-            "&\$orderby=TicketNumber desc" .
-            "&\$select=TicketId,TicketNumber,TicketIssueTypeName,CreatedDate,CompletedDate"
-        );
+        return Cache::remember($cacheKey, self::CACHE_TICKETS, function () use ($ids) {
+            $idList = implode(',', $ids);
+
+            return $this->get(
+                "/ticketsview?\$filter=TicketId in ({$idList})" .
+                "&\$orderby=TicketNumber desc" .
+                "&\$select=TicketId,TicketNumber,TicketIssueTypeName,CreatedDate,CompletedDate"
+            );
+        });
     }
 
     /**
@@ -116,18 +129,31 @@ class Meta2Service
     }
 
     /**
-     * Paso 3 — Custom fields en paralelo con Http::pool
+     * Paso 3 — Custom fields en paralelo con Http::pool (con caché por ticket).
      */
     protected function getCustomFieldsPool(array $ticketIds): array
     {
         if (empty($ticketIds)) return [];
 
-        $result      = [];
+        // Pre-cargar los que ya están en caché
+        $result    = [];
+        $uncached  = [];
+
+        foreach ($ticketIds as $id) {
+            $cached = Cache::get("meta2:cf:{$id}");
+            if ($cached !== null) {
+                $result[$id] = $cached;
+            } else {
+                $uncached[] = $id;
+            }
+        }
+
+        if (empty($uncached)) return $result;
+
         $authHeader  = $this->authHeader;
         $baseUrl     = $this->baseUrl;
         $fieldFilter = $this->buildFieldFilter();
-
-        $chunks = array_chunk($ticketIds, 10);
+        $chunks      = array_chunk($uncached, 10);
 
         foreach ($chunks as $chunk) {
             $responses = Http::pool(function ($pool) use ($chunk, $baseUrl, $authHeader, $fieldFilter) {
@@ -163,6 +189,7 @@ class Meta2Service
                     }
                 }
 
+                Cache::put("meta2:cf:{$ticketId}", $flat, self::CACHE_CF);
                 $result[$ticketId] = $flat;
             }
 
@@ -175,37 +202,42 @@ class Meta2Service
     }
 
     /**
-     * Método principal — orquesta los 3 pasos
+     * Método principal — orquesta los 3 pasos (con caché por mes/año/búsqueda).
      */
     public function getTelefoniaTickets(?string $search = null, ?int $month = null, ?int $year = null): array
     {
         if (!$month || !$year) return [];
 
-        $ids = $this->getTelefoniaIds($month, $year);
+        // Con búsqueda activa no cacheamos el resultado filtrado, pero sí los datos base
+        $cacheKey = "meta2:view:{$year}:{$month}:" . md5($search ?? '');
+        $ttl      = $search ? 3600 : self::CACHE_TICKETS; // 1h con búsqueda activa, 24h sin
 
-        if (empty($ids)) return [];
+        return Cache::remember($cacheKey, $ttl, function () use ($search, $month, $year) {
+            $ids = $this->getTelefoniaIds($month, $year);
+            if (empty($ids)) return [];
 
-        $tickets = $this->getTicketsByIds($ids);
+            $tickets = $this->getTicketsByIds($ids);
 
-        if ($search) {
-            $s       = strtolower($search);
-            $tickets = array_values(array_filter($tickets, fn($t) =>
-                str_contains(strtolower($t['TicketNumber'] ?? ''), $s) ||
-                str_contains(strtolower($t['TicketIssueTypeName'] ?? ''), $s)
-            ));
-        }
+            if ($search) {
+                $s       = strtolower($search);
+                $tickets = array_values(array_filter($tickets, fn($t) =>
+                    str_contains(strtolower($t['TicketNumber'] ?? ''), $s) ||
+                    str_contains(strtolower($t['TicketIssueTypeName'] ?? ''), $s)
+                ));
+            }
 
-        if (empty($tickets)) return [];
+            if (empty($tickets)) return [];
 
-        $ticketIds    = array_column($tickets, 'TicketId');
-        $customFields = $this->getCustomFieldsPool($ticketIds);
+            $ticketIds    = array_column($tickets, 'TicketId');
+            $customFields = $this->getCustomFieldsPool($ticketIds);
 
-        foreach ($tickets as &$ticket) {
-            $ticket['customFields'] = $customFields[$ticket['TicketId']] ?? ['ticketId' => $ticket['TicketId']];
-        }
-        unset($ticket);
+            foreach ($tickets as &$ticket) {
+                $ticket['customFields'] = $customFields[$ticket['TicketId']] ?? ['ticketId' => $ticket['TicketId']];
+            }
+            unset($ticket);
 
-        return $this->transformTickets($tickets);
+            return $this->transformTickets($tickets);
+        });
     }
 
     /**
@@ -246,6 +278,13 @@ class Meta2Service
      * Preparar datos completos para el PDF del informe
      */
     public function getPdfReportData(int $month, int $year): array
+    {
+        return Cache::remember("meta2:pdf:{$year}:{$month}", self::CACHE_PDF, fn () =>
+            $this->buildPdfReportData($month, $year)
+        );
+    }
+
+    protected function buildPdfReportData(int $month, int $year): array
     {
         $completedIds = $this->getTelefoniaIds($month, $year);
 
@@ -329,9 +368,11 @@ class Meta2Service
      */
     protected function getAllTelefoniaTickets(): array
     {
-        return $this->get(
-            "/ticketsview?\$filter=TicketIssueTypeName eq 'Telefonía'" .
-            "&\$select=TicketId,TicketNumber,CompletedDate,CreatedDate"
+        return Cache::remember('meta2:all_tickets', self::CACHE_ALL, fn () =>
+            $this->get(
+                "/ticketsview?\$filter=TicketIssueTypeName eq 'Telefonía'" .
+                "&\$select=TicketId,TicketNumber,CompletedDate,CreatedDate"
+            )
         );
     }
 

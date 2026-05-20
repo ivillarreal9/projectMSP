@@ -20,6 +20,7 @@ use App\Http\Controllers\Admin\ClientMergeController;
 use App\Http\Controllers\Admin\SurveyTypeController;
 use App\Http\Controllers\Admin\SurveyController;
 use App\Http\Controllers\Admin\GlpiController;
+use App\Http\Controllers\Admin\MerakiController;
 use App\Http\Controllers\Auth\TwoFactorController;
 use App\Http\Controllers\Admin\SincronizarController;
 use Illuminate\Support\Facades\Route;
@@ -142,8 +143,9 @@ Route::middleware(['auth', 'module:glpi'])
     ->group(function () {
         Route::get('/', [GlpiController::class, 'index'])->name('index');
 
-        Route::post('/session/init', [GlpiController::class, 'sessionInit'])->name('session.init');
-        Route::post('/session/kill', [GlpiController::class, 'sessionKill'])->name('session.kill');
+        Route::post('/session/init',    [GlpiController::class, 'sessionInit'])->name('session.init');
+        Route::post('/session/kill',    [GlpiController::class, 'sessionKill'])->name('session.kill');
+        Route::post('/cache/refresh',   [GlpiController::class, 'refreshCache'])->name('cache.refresh');
 
         Route::get('/{itemtype}/create',    [GlpiController::class, 'create'])->name('create');
         Route::post('/{itemtype}',          [GlpiController::class, 'store'])->name('store');
@@ -170,13 +172,32 @@ Route::middleware(['auth', 'module:sales'])
         Route::get('/overview/commissions', [SalesOverviewController::class, 'commissions']) ->name('overview.commissions');
     });
 
+// ─── Meraki (módulo: meraki) ──────────────────────────────────────────────────
+Route::middleware(['auth', 'module:meraki'])
+    ->prefix('admin/meraki')
+    ->name('admin.meraki.')
+    ->group(function () {
+        Route::get('/',                                        [MerakiController::class, 'index'])->name('index');
+        Route::post('/refresh-all',                           [MerakiController::class, 'refreshAll'])->name('refresh.all');
+        Route::get('/licenses',                               [MerakiController::class, 'licenses'])->name('licenses');
+        Route::get('/alerts',                                 [MerakiController::class, 'alerts'])->name('alerts');
+        Route::get('/export/devices',                         [MerakiController::class, 'exportDevices'])->name('export.devices');
+        Route::get('/export/licenses',                        [MerakiController::class, 'exportLicenses'])->name('export.licenses');
+        Route::get('/models/{model}',                         [MerakiController::class, 'modelDetail'])->name('model');
+        Route::get('/{orgId}',                                [MerakiController::class, 'organization'])->name('organization');
+        Route::post('/{orgId}/refresh',                       [MerakiController::class, 'refresh'])->name('refresh');
+        Route::get('/{orgId}/networks/{networkId}',           [MerakiController::class, 'network'])->name('network');
+        Route::post('/{orgId}/networks/{networkId}/refresh',  [MerakiController::class, 'refreshNetwork'])->name('network.refresh');
+    });
+
 // ─── Sincronizar ─────────────────────────────────────────────────────────────
 Route::middleware(['auth'])
     ->prefix('admin')
     ->name('admin.')
     ->group(function () {
         Route::get('sincronizar',                   [SincronizarController::class, 'coincidencias'])->name('sincronizar.index');
-        Route::get('sincronizar/sin-coincidencia', [SincronizarController::class, 'sinCoincidencia'])->name('sincronizar.sin-coincidencia');
+        Route::get('sincronizar/sin-coincidencia',  [SincronizarController::class, 'sinCoincidencia'])->name('sincronizar.sin-coincidencia');
+        Route::post('sincronizar/clear-cache',      [SincronizarController::class, 'clearCache'])->name('sincronizar.clear-cache');
         Route::get('sincronizar/ejecutar',          fn() => view('admin.sincronizar.ejecutar'))->name('sincronizar.ejecutar');
         Route::post('sincronizar/preview',          [SincronizarController::class, 'preview'])->name('sincronizar.preview');
         Route::post('sincronizar/ejecutar',         [SincronizarController::class, 'ejecutar'])->name('sincronizar.ejecutar.post');

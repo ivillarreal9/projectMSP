@@ -10,7 +10,7 @@
                     {{ count($odooSinMatch) }} sin match en Odoo
                 </span>
                 <span id="badge-msp" class="text-xs font-medium px-2.5 py-1 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
-                    {{ count($mspTodos) }} clientes MSP sin ReferenceId
+                    {{ count($mspSinMatch) }} clientes MSP sin match
                 </span>
             </div>
         </div>
@@ -20,6 +20,12 @@
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-3">
 
             @include('admin.sincronizar.partials.nav')
+
+            @if (session('success'))
+                <div class="rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 px-4 py-3 text-sm text-green-700 dark:text-green-400">
+                    {{ session('success') }}
+                </div>
+            @endif
 
             @if (session('error'))
                 <div class="rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-4 py-3 text-sm text-red-700 dark:text-red-400">
@@ -31,10 +37,10 @@
             <div class="flex items-start gap-3 px-4 py-3 rounded-xl bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 text-sm text-orange-700 dark:text-orange-300">
                 <i class="fa-solid fa-circle-info text-base flex-shrink-0 mt-0.5"></i>
                 <span>
-                    <strong>1.</strong> Haz clic en un cliente <strong>Odoo</strong> — queda activo (parpadea).
-                    <strong>2.</strong> Haz clic en uno o varios clientes <strong>MSP</strong> — todos se enlazan a ese Odoo con el mismo color.
-                    <strong>3.</strong> Haz clic en otro cliente Odoo para iniciar un nuevo grupo.
-                    <strong>4.</strong> Pulsa <strong>Enlazar todos</strong>.
+                    <strong>1.</strong> Haz clic en un cliente <strong>MSP</strong> — queda activo (parpadea).
+                    <strong>2.</strong> Haz clic en uno o varios clientes <strong>Odoo</strong> — todos se enlazan a ese MSP.
+                    <strong>3.</strong> Haz clic en otro cliente MSP para iniciar un nuevo grupo.
+                    <strong>4.</strong> Pulsa <strong>Enlazar todos</strong> (se guardará como: Cuenta 1: 100, Cuenta 2: 101...).
                 </span>
             </div>
 
@@ -99,9 +105,9 @@
                     <div class="flex-shrink-0 px-5 py-3 border-b border-gray-200 dark:border-gray-700
                                 flex items-center justify-between bg-orange-50/60 dark:bg-orange-900/10">
                         <span class="text-sm font-semibold text-orange-700 dark:text-orange-400">
-                            <i class="fa-solid fa-cloud mr-1.5"></i>MSP — sin ReferenceId
+                            <i class="fa-solid fa-cloud mr-1.5"></i>MSP — sin match
                         </span>
-                        <span id="count-msp" class="text-xs text-orange-600 dark:text-orange-500">{{ count($mspTodos) }} registros</span>
+                        <span id="count-msp" class="text-xs text-orange-600 dark:text-orange-500">{{ count($mspSinMatch) }} registros</span>
                     </div>
                     <div class="flex-1 min-h-0 overflow-y-auto">
                         <table class="w-full text-sm text-left">
@@ -113,15 +119,15 @@
                                 </tr>
                             </thead>
                             <tbody id="tbody-msp" class="divide-y divide-gray-100 dark:divide-gray-700">
-                                @forelse ($mspTodos as $i => $cliente)
+                                @forelse ($mspSinMatch as $i => $cliente)
                                     <tr class="fila-msp cursor-pointer transition-colors hover:bg-orange-50/60 dark:hover:bg-orange-900/10"
-                                        data-nombre="{{ strtolower($cliente['CustomerName'] ?? '') }}"
-                                        data-customer-id="{{ $cliente['CustomerId'] ?? '' }}"
-                                        data-msp-nombre="{{ $cliente['CustomerName'] ?? '' }}"
+                                        data-nombre="{{ strtolower($cliente['msp_nombre'] ?? '') }}"
+                                        data-customer-id="{{ $cliente['customer_id'] ?? '' }}"
+                                        data-msp-nombre="{{ $cliente['msp_nombre'] ?? '' }}"
                                         onclick="clickMsp(this)">
                                         <td class="px-4 py-2.5 text-gray-400 text-xs tabular-nums">{{ $i + 1 }}</td>
                                         <td class="px-4 py-2.5 font-medium text-gray-800 dark:text-gray-100">
-                                            <span class="color-dot hidden w-2.5 h-2.5 rounded-full inline-block mr-1.5 align-middle flex-shrink-0"></span>{{ $cliente['CustomerName'] ?? '—' }}
+                                            <span class="color-dot hidden w-2.5 h-2.5 rounded-full inline-block mr-1.5 align-middle flex-shrink-0"></span>{{ $cliente['msp_nombre'] ?? '—' }}
                                         </td>
                                     </tr>
                                 @empty
@@ -252,7 +258,7 @@
     ];
 
     /* ── Estado ────────────────────────────────────────────────────────────── */
-    // grupos: [{ id, colorIdx, odooTr, odooNombre, cuenta, mspItems:[{tr,nombre,customerId}] }]
+    // grupos: [{ id, colorIdx, mspTr, mspNombre, customerId, odooItems:[{tr,nombre,cuenta}] }]
     let grupos        = [];
     let activeGrupoId = null;
     let nextColorIdx  = 0;
@@ -260,8 +266,8 @@
 
     /* ── Helpers de búsqueda ───────────────────────────────────────────────── */
     const getGrupo       = id  => grupos.find(g => g.id === id);
-    const grupoDeOdoo    = tr  => grupos.find(g => g.odooTr === tr);
-    const grupoDeMsp     = tr  => grupos.find(g => g.mspItems.some(m => m.tr === tr));
+    const grupoDeMsp     = tr  => grupos.find(g => g.mspTr === tr);
+    const grupoDeOdoo    = tr  => grupos.find(g => g.odooItems.some(o => o.tr === tr));
 
     /* ── Marcar / desmarcar filas ──────────────────────────────────────────── */
     function marcarFila(tr, colorIdx, pending = false) {
@@ -281,13 +287,13 @@
 
     /* ── Activar / desactivar grupo ────────────────────────────────────────── */
     function activarGrupo(id) {
-        // Desactivar el actual (si tiene MSP se queda, si no se elimina)
+        // Desactivar el actual (si tiene Odoo se queda, si no se elimina)
         if (activeGrupoId !== null) {
             const g = getGrupo(activeGrupoId);
             if (g) {
-                g.odooTr.classList.remove('par-pending');
-                if (g.mspItems.length === 0) {
-                    desmarcarFila(g.odooTr);
+                g.mspTr.classList.remove('par-pending');
+                if (g.odooItems.length === 0) {
+                    desmarcarFila(g.mspTr);
                     grupos = grupos.filter(x => x.id !== activeGrupoId);
                 }
             }
@@ -296,23 +302,23 @@
 
         if (id !== null) {
             const g = getGrupo(id);
-            if (g) { g.odooTr.classList.add('par-pending'); activeGrupoId = id; }
+            if (g) { g.mspTr.classList.add('par-pending'); activeGrupoId = id; }
         }
 
         sincronizarBarra();
     }
 
-    /* ── Click Odoo ────────────────────────────────────────────────────────── */
-    function clickOdoo(tr) {
-        const existing = grupoDeOdoo(tr);
+    /* ── Click MSP ─────────────────────────────────────────────────────────── */
+    function clickMsp(tr) {
+        const existing = grupoDeMsp(tr);
 
         if (existing) {
             if (activeGrupoId === existing.id) {
-                // Clic sobre el activo: si tiene MSP lo desactiva, si no lo elimina
-                if (existing.mspItems.length === 0) {
+                // Clic sobre el activo: si tiene Odoo lo desactiva, si no lo elimina
+                if (existing.odooItems.length === 0) {
                     eliminarGrupo(existing.id);
                 } else {
-                    existing.odooTr.classList.remove('par-pending');
+                    existing.mspTr.classList.remove('par-pending');
                     activeGrupoId = null;
                     sincronizarBarra();
                 }
@@ -327,17 +333,24 @@
         const id       = nextId++;
         const colorIdx = nextColorIdx++ % PALETTE.length;
         marcarFila(tr, colorIdx, true);
-        grupos.push({ id, colorIdx, odooTr: tr, odooNombre: tr.dataset.odooNombre, cuenta: tr.dataset.cuenta, mspItems: [] });
+        grupos.push({
+            id,
+            colorIdx,
+            mspTr: tr,
+            mspNombre: tr.dataset.mspNombre,
+            customerId: tr.dataset.customerId,
+            odooItems: []
+        });
         activarGrupo(id);
     }
 
-    /* ── Click MSP ─────────────────────────────────────────────────────────── */
-    function clickMsp(tr) {
+    /* ── Click Odoo ────────────────────────────────────────────────────────── */
+    function clickOdoo(tr) {
         // ¿Ya está en algún grupo? → quitarlo
-        const existing = grupoDeMsp(tr);
+        const existing = grupoDeOdoo(tr);
         if (existing) {
             desmarcarFila(tr);
-            existing.mspItems = existing.mspItems.filter(m => m.tr !== tr);
+            existing.odooItems = existing.odooItems.filter(o => o.tr !== tr);
             sincronizarBarra();
             return;
         }
@@ -352,11 +365,10 @@
 
         const g = getGrupo(activeGrupoId);
         marcarFila(tr, g.colorIdx, false);
-        g.mspItems.push({
+        g.odooItems.push({
             tr,
-            nombre:     tr.dataset.mspNombre,
-            customerId: tr.dataset.customerId,
-            cuentaRef:  g.cuenta,   // hereda la cuenta Odoo, editable en la barra
+            nombre: tr.dataset.odooNombre,
+            cuenta: tr.dataset.cuenta,
         });
         sincronizarBarra();
     }
@@ -365,8 +377,8 @@
     function eliminarGrupo(id) {
         const g = getGrupo(id);
         if (!g) return;
-        desmarcarFila(g.odooTr);
-        g.mspItems.forEach(m => desmarcarFila(m.tr));
+        desmarcarFila(g.mspTr);
+        g.odooItems.forEach(o => desmarcarFila(o.tr));
         grupos = grupos.filter(x => x.id !== id);
         if (activeGrupoId === id) activeGrupoId = null;
         sincronizarBarra();
@@ -374,7 +386,7 @@
 
     /* ── Limpiar todo ──────────────────────────────────────────────────────── */
     function limpiarTodo() {
-        grupos.forEach(g => { desmarcarFila(g.odooTr); g.mspItems.forEach(m => desmarcarFila(m.tr)); });
+        grupos.forEach(g => { desmarcarFila(g.mspTr); g.odooItems.forEach(o => desmarcarFila(o.tr)); });
         grupos        = [];
         activeGrupoId = null;
         nextColorIdx  = 0;
@@ -391,15 +403,15 @@
         const btnLimpiar = document.getElementById('btn-limpiar');
 
         const hayAlgo       = grupos.length > 0;
-        const totalEnlaces  = grupos.reduce((s, g) => s + g.mspItems.length, 0);
-        const gruposListos  = grupos.filter(g => g.mspItems.length > 0).length;
+        const totalEnlaces  = grupos.reduce((s, g) => s + g.odooItems.length, 0);
+        const gruposListos  = grupos.filter(g => g.odooItems.length > 0).length;
 
         bar.classList.toggle('hidden', !hayAlgo && activeGrupoId === null);
 
         // Título
         const partes = [];
         if (gruposListos > 0)  partes.push(`${gruposListos} grupo${gruposListos > 1 ? 's' : ''}`);
-        if (totalEnlaces > 0)  partes.push(`${totalEnlaces} enlace${totalEnlaces > 1 ? 's' : ''}`);
+        if (totalEnlaces > 0)  partes.push(`${totalEnlaces} cuenta${totalEnlaces > 1 ? 's' : ''} Odoo`);
         title.textContent = partes.length ? partes.join(' · ') : 'Sin grupos';
 
         // Hint activo
@@ -409,35 +421,32 @@
         btnEnlazar.disabled = totalEnlaces === 0;
         btnLimpiar.classList.toggle('hidden', !hayAlgo);
 
-        // Renderizar grupos — cada MSP con su propio input de cuenta editable
+        // Renderizar grupos — MSP arriba, Odoos abajo
         lista.innerHTML = grupos.map(g => {
             const color    = PALETTE[g.colorIdx % PALETTE.length];
             const isActive = g.id === activeGrupoId;
 
-            const mspFilas = g.mspItems.map((m, idx) => `
+            const odooFilas = g.odooItems.map((o, idx) => `
                 <div class="flex items-center gap-2 pl-6 py-1">
                     <span class="text-gray-300 dark:text-gray-600 text-[10px] flex-shrink-0 w-3">
-                        ${idx === g.mspItems.length - 1 ? '└' : '├'}
+                        ${idx === g.odooItems.length - 1 ? '└' : '├'}
                     </span>
                     <span class="flex-1 min-w-0 truncate text-xs text-gray-700 dark:text-gray-300"
-                          title="${escHtml(m.nombre)}">${escHtml(m.nombre)}</span>
+                          title="${escHtml(o.nombre)}">${escHtml(o.nombre)}</span>
                     <span class="text-[10px] text-gray-400 flex-shrink-0">cuenta:</span>
-                    <input type="text"
-                           value="${escHtml(m.cuentaRef)}"
-                           class="cuenta-input"
-                           placeholder="N° cuenta"
-                           onchange="updateCuenta(${g.id},'${escJs(m.customerId)}',this.value)"
-                           onclick="event.stopPropagation()">
-                    <button onclick="event.stopPropagation(); quitarMsp(${g.id},'${escJs(m.customerId)}')"
+                    <span class="font-mono text-[11px] text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">
+                        ${escHtml(o.cuenta)}
+                    </span>
+                    <button onclick="event.stopPropagation(); quitarOdoo(${g.id},'${escJs(o.cuenta)}')"
                             class="flex-shrink-0 w-4 h-4 flex items-center justify-center rounded
                                    text-gray-300 hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition">
                         <i class="fa-solid fa-xmark text-[9px]"></i>
                     </button>
                 </div>`).join('');
 
-            const emptyHint = g.mspItems.length === 0 && isActive
+            const emptyHint = g.odooItems.length === 0 && isActive
                 ? `<div class="pl-9 py-1 text-[11px] text-orange-400 italic">
-                       selecciona clientes MSP para asignar…
+                       selecciona clientes Odoo para asignar…
                    </div>`
                 : '';
 
@@ -452,44 +461,36 @@
                     <span class="w-2.5 h-2.5 rounded-full flex-shrink-0 ${isActive ? 'animate-pulse' : ''}"
                           style="background:${color.dot}"></span>
                     <span class="font-semibold text-gray-800 dark:text-white truncate flex-1"
-                          title="${escHtml(g.odooNombre)}">${escHtml(g.odooNombre)}</span>
-                    <span class="font-mono text-gray-400 flex-shrink-0 text-[11px]">Odoo: ${escHtml(g.cuenta)}</span>
+                          title="${escHtml(g.mspNombre)}">${escHtml(g.mspNombre)}</span>
+                    <span class="text-gray-400 flex-shrink-0 text-[10px]">MSP</span>
                     ${isActive
                         ? '<span class="text-[9px] font-bold text-orange-500 uppercase tracking-wide flex-shrink-0">activo</span>'
                         : ''}
-                    <span class="text-gray-400 flex-shrink-0 text-[10px]">${g.mspItems.length} MSP</span>
+                    <span class="text-gray-400 flex-shrink-0 text-[10px]">${g.odooItems.length} Odoo</span>
                     <button onclick="eliminarGrupo(${g.id})"
                             class="flex-shrink-0 w-4 h-4 flex items-center justify-center rounded
                                    text-gray-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition">
                         <i class="fa-solid fa-xmark text-[9px]"></i>
                     </button>
                 </div>
-                ${mspFilas}
+                ${odooFilas}
                 ${emptyHint}
             </div>`;
         }).join('');
     }
 
-    /* ── Editar la cuenta de un MSP item desde la barra ───────────────────── */
-    function updateCuenta(grupoId, customerId, value) {
+    /* ── Quitar un Odoo específico de un grupo (desde la barra) ─────────────── */
+    function quitarOdoo(grupoId, cuenta) {
         const g = getGrupo(grupoId);
         if (!g) return;
-        const item = g.mspItems.find(m => m.customerId === customerId);
-        if (item) item.cuentaRef = value.trim();
-    }
-
-    /* ── Quitar un MSP específico de un grupo (desde la barra) ─────────────── */
-    function quitarMsp(grupoId, customerId) {
-        const g = getGrupo(grupoId);
-        if (!g) return;
-        const item = g.mspItems.find(m => m.customerId === customerId);
-        if (item) { desmarcarFila(item.tr); g.mspItems = g.mspItems.filter(m => m.customerId !== customerId); }
+        const item = g.odooItems.find(o => o.cuenta === cuenta);
+        if (item) { desmarcarFila(item.tr); g.odooItems = g.odooItems.filter(o => o.cuenta !== cuenta); }
         sincronizarBarra();
     }
 
     /* ── Confirmar y enviar ────────────────────────────────────────────────── */
     async function confirmarEnlace() {
-        const totalEnlaces = grupos.reduce((s, g) => s + g.mspItems.length, 0);
+        const totalEnlaces = grupos.reduce((s, g) => s + g.odooItems.length, 0);
         if (totalEnlaces === 0) return;
 
         const btnEnlazar = document.getElementById('btn-enlazar');
@@ -498,16 +499,19 @@
 
         btnEnlazar.disabled = true;
         btnIcon.className   = 'fa-solid fa-spinner fa-spin';
-        btnText.textContent = `Enlazando ${totalEnlaces}…`;
+        btnText.textContent = `Enlazando ${grupos.length} MSP…`;
 
-        // Construir pares: cada MSP usa su propio cuentaRef (editable en la barra)
-        const pares = grupos.flatMap(g =>
-            g.mspItems.map(m => ({
-                customer_id:   m.customerId,
-                customer_name: m.nombre,
-                numero_cuenta: m.cuentaRef,
-            }))
-        );
+        // Construir pares: 1 MSP -> N Odoo (formateado en ReferenceId)
+        const pares = grupos.filter(g => g.odooItems.length > 0).map(g => {
+            // Formato: "Cuenta 1: 100, Cuenta 2: 101"
+            const refId = g.odooItems.map((o, i) => `Cuenta ${i+1}: ${o.cuenta}`).join(', ');
+
+            return {
+                customer_id:   g.customerId,
+                customer_name: g.mspNombre,
+                numero_cuenta: refId,
+            };
+        });
 
         try {
             const res  = await fetch(URL_ENLAZAR, {
@@ -523,7 +527,7 @@
 
             // Animar y eliminar filas enlazadas
             grupos.forEach(g => {
-                [g.odooTr, ...g.mspItems.map(m => m.tr)].forEach(tr => {
+                [g.mspTr, ...g.odooItems.map(o => o.tr)].forEach(tr => {
                     tr.style.transition = 'opacity .25s';
                     tr.style.opacity    = '0';
                     setTimeout(() => { tr.remove(); actualizarContadores(); }, 280);
@@ -532,7 +536,7 @@
 
             const n = data.enlazados ?? 0;
             toast(
-                `${n} enlace${n !== 1 ? 's' : ''} creado${n !== 1 ? 's' : ''}` +
+                `${n} cliente${n !== 1 ? 's' : ''} MSP enlazado${n !== 1 ? 's' : ''}` +
                 (data.errores?.length ? ` · Errores: ${data.errores.join(', ')}` : ''),
                 n > 0 ? 'ok' : 'err'
             );
@@ -543,7 +547,7 @@
         } catch (err) {
             toast('Error: ' + err.message, 'err');
         } finally {
-            btnEnlazar.disabled = grupos.reduce((s, g) => s + g.mspItems.length, 0) === 0;
+            btnEnlazar.disabled = grupos.reduce((s, g) => s + g.odooItems.length, 0) === 0;
             btnIcon.className   = 'fa-solid fa-link';
             btnText.textContent = 'Enlazar todos';
         }

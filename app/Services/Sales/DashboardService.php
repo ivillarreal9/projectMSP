@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Cache;
 
 class DashboardService
 {
-    const CACHE_TTL = 300;
+    const CACHE_TTL = 86400; // 24 horas
 
     public function __construct(private OdooService $odoo) {}
 

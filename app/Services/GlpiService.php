@@ -15,9 +15,9 @@ class GlpiService
 
     public function __construct()
     {
-        $this->baseUrl   = rtrim(config('glpi.base_url'), '/');
-        $this->appToken  = config('glpi.app_token');
-        $this->userToken = config('glpi.user_token');
+        $this->baseUrl   = rtrim(config('glpi.base_url') ?? '', '/');
+        $this->appToken  = (string) config('glpi.app_token', '');
+        $this->userToken = (string) config('glpi.user_token', '');
     }
 
     public function initSession(): string
@@ -81,6 +81,8 @@ class GlpiService
         return $this->get('/getActiveEntities');
     }
 
+    private const ITEMS_CACHE_TTL = 86400; // 24 horas
+
     public function getAllItems(string $itemtype, array $params = []): array
     {
         $defaults = [
@@ -92,12 +94,64 @@ class GlpiService
         ];
 
         $query    = array_merge($defaults, $params);
-        $response = $this->request('GET', "/{$itemtype}", $query);
+        $cacheKey = 'glpi_items_' . $itemtype . '_' . md5(serialize($query));
 
-        return [
-            'items' => $response['data'] ?? [],
-            'total' => $response['total'] ?? 0,
+        return Cache::remember($cacheKey, self::ITEMS_CACHE_TTL, function () use ($itemtype, $query) {
+            $response = $this->request('GET', "/{$itemtype}", $query);
+
+            return [
+                'items' => $response['data'] ?? [],
+                'total' => $response['total'] ?? 0,
+            ];
+        });
+    }
+
+    public function warmCache(): void
+    {
+        $this->initSession();
+
+        $assetTypes = array_keys(config('glpi.asset_types', []));
+
+        // Para el index: conteo de cada tipo (range 0-0)
+        foreach ($assetTypes as $type) {
+            $this->getAllItems($type, ['range' => '0-0']);
+        }
+
+        // Para el index NetworkEquipment: lista completa con dropdowns
+        $this->getAllItems('NetworkEquipment', [
+            'range'            => '0-4999',
+            'expand_dropdowns' => true,
+            'get_hateoas'      => false,
+        ]);
+
+        // Para la vista de items de cada tipo (range 0-499)
+        foreach ($assetTypes as $type) {
+            $this->getAllItems($type, [
+                'range'            => '0-499',
+                'expand_dropdowns' => true,
+                'get_hateoas'      => false,
+            ]);
+        }
+    }
+
+    public function forgetItemsCache(string $itemtype): void
+    {
+        // Borra todas las entradas conocidas para el tipo dado
+        $paramSets = [
+            ['range' => '0-0'],
+            ['range' => '0-499', 'expand_dropdowns' => true, 'get_hateoas' => false],
         ];
+
+        if ($itemtype === 'NetworkEquipment') {
+            $paramSets[] = ['range' => '0-4999', 'expand_dropdowns' => true, 'get_hateoas' => false];
+        }
+
+        $defaults = ['range' => '0-49', 'sort' => 'name', 'order' => 'ASC', 'expand_dropdowns' => true, 'get_hateoas' => false];
+
+        foreach ($paramSets as $params) {
+            $query = array_merge($defaults, $params);
+            Cache::forget('glpi_items_' . $itemtype . '_' . md5(serialize($query)));
+        }
     }
 
     public function getItem(string $itemtype, int $id): array

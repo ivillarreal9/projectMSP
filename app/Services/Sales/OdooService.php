@@ -12,10 +12,11 @@ class OdooService
     private string $username;
     private string $apiKey;
 
-    const CACHE_KPI        = 300;
-    const CACHE_EXECUTIVES = 3600;
-    const CACHE_CLIENTS    = 600;
-    const CACHE_PIPELINE   = 300;
+    const CACHE_KPI        = 86400;   // 24 horas
+    const CACHE_EXECUTIVES = 86400;   // 24 horas
+    const CACHE_CLIENTS    = 86400;   // 24 horas
+    const CACHE_PIPELINE   = 86400;   // 24 horas
+    const CACHE_MONTH      = 2592000; // 30 días
 
     public function __construct()
     {
@@ -538,7 +539,7 @@ class OdooService
     // ── Sync: todos los partners empresa con nombre y número de cuenta ──
     public function fetchAllPartnersForSync(): array
     {
-        return Cache::remember('odoo:sync:partners', 300, function () {
+        return Cache::remember('odoo:sync:partners', self::CACHE_MONTH, function () {
             return $this->execute('res.partner', 'search_read',
                 [[['is_company', '=', true], ['partner_state', '!=', 'cancel'], ['x_studio_tipo_de_cliente', '!=', 'Residencial']]],
                 [
@@ -559,6 +560,7 @@ class OdooService
             'odoo:clients',
             'odoo:executives',
             'odoo:pipeline:chart',
+            'odoo:sync:partners',
         ];
         foreach ($keys as $key) {
             Cache::forget($key);

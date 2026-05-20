@@ -9,3 +9,5 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('sales:refresh-cache')->dailyAt('06:00');
+Schedule::command('glpi:warm-cache')->everyThirtyMinutes();
+Schedule::command('meraki:warm-cache')->everyThirtyMinutes();

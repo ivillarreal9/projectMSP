@@ -177,6 +177,30 @@
                 </a>
                 @endif
 
+                {{-- Meraki --}}
+                @if(auth()->user()->canAccessModule('meraki'))
+                <a href="{{ route('admin.meraki.index') }}"
+                   class="group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 hover:border-teal-400 dark:hover:border-teal-500 hover:shadow-md transition-all duration-200">
+                    <div class="flex items-start justify-between mb-4">
+                        <div class="w-10 h-10 bg-teal-50 dark:bg-teal-900/30 rounded-lg flex items-center justify-center group-hover:bg-teal-100 dark:group-hover:bg-teal-900/50 transition">
+                            <svg class="w-5 h-5 text-teal-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"/>
+                            </svg>
+                        </div>
+                        <svg class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-teal-400 transition" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                        </svg>
+                    </div>
+                    <h3 class="text-sm font-semibold text-gray-800 dark:text-gray-200 group-hover:text-teal-600 dark:group-hover:text-teal-400 transition">
+                        Meraki
+                    </h3>
+                    <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                        Redes y dispositivos Cisco Meraki
+                    </p>
+                </a>
+                @endif
+
                 {{-- Mensaje si no tiene módulos --}}
                 @if(count(auth()->user()->modulosAccesibles()) === 0)
                 <div class="col-span-full flex flex-col items-center justify-center py-16 text-center text-gray-400 dark:text-gray-500">

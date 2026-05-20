@@ -35,6 +35,17 @@ class GlpiController extends Controller
         }
     }
 
+    public function refreshCache()
+    {
+        try {
+            $this->glpi->warmCache();
+            return back()->with('success', 'Caché de GLPI actualizado correctamente.');
+        } catch (Exception $e) {
+            Log::error('GLPI refreshCache: ' . $e->getMessage());
+            return back()->with('error', 'Error al actualizar el caché: ' . $e->getMessage());
+        }
+    }
+
     public function index()
     {
         $assetTypes = config('glpi.asset_types');

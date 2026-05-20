@@ -93,4 +93,16 @@ return [
         'dark_color'  => '#2dd4bf',
         'dark_bg'     => 'rgba(13,148,136,.15)',
     ],
+
+    'meraki' => [
+        'nombre'      => 'Meraki',
+        'descripcion' => 'Redes y dispositivos Cisco',
+        'icon'        => 'fa-wifi',
+        'color'       => '#0f766e',
+        'bg'          => '#f0fdfa',
+        'light_color' => '#0d9488',
+        'light_bg'    => '#ccfbf1',
+        'dark_color'  => '#2dd4bf',
+        'dark_bg'     => 'rgba(15,118,110,.15)',
+    ],
 ];

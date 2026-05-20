@@ -12,7 +12,7 @@ class MspService
     protected string $authHeader;
 
     private const CHUNK_SIZE    = 25;
-    private const CF_CACHE_TTL  = 86400; // custom fields de tickets cerrados: 24 horas
+    private const CF_CACHE_TTL  = 172800; // custom fields de tickets cerrados: 48 horas
 
     private const CUSTOM_FIELD_IDS = [
         '3113f8e8-1d04-f011-90cd-000d3a1010e6', // Tipo de Cliente
@@ -42,7 +42,7 @@ class MspService
             throw new \Exception('No hay credenciales MSP configuradas en el .env');
         }
 
-        $this->baseUrl    = rtrim($baseUrl, '/');
+        $this->baseUrl    = rtrim($baseUrl ?? '', '/');
         $this->authHeader = 'Basic ' . base64_encode($username . ':' . $password);
     }
 
@@ -305,7 +305,7 @@ class MspService
 
     public function fetchCustomers(): array
     {
-        return Cache::remember('msp:customers:sync', 300, function () {
+        return Cache::remember('msp:customers:sync', 2592000, function () {
             $all      = [];
             $endpoint = '/customers?$top=1000&$select=CustomerId,CustomerName,ReferenceId,RmReferenceId';
 
@@ -336,8 +336,9 @@ class MspService
             'Authorization' => $this->authHeader,
             'Accept'        => 'application/json;odata.metadata=minimal;odata.streaming=true',
             'Content-Type'  => 'application/json;odata.metadata=minimal;odata.streaming=true',
-        ])->timeout(30)->patch($this->baseUrl . '/customers/' . $customerId, [
-            'referenceId' => $referenceId,
+        ])->timeout(30)->put($this->baseUrl . '/customers/' . $customerId, [
+            'CustomerName' => $customerName,  // PUT requiere todos los campos obligatorios
+            'referenceId'  => $referenceId,
         ]);
 
         if ($response->failed()) {
@@ -345,6 +346,9 @@ class MspService
                 "Error MSP update [{$response->status()}] cliente {$customerId}: " . $response->body()
             );
         }
+
+        // Invalidar caché para que el siguiente buildFilas() muestre el estado real
+        Cache::forget('msp:customers:sync');
     }
 
     // -------------------------------------------------------------------------

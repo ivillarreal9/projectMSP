@@ -8,6 +8,19 @@ use App\Services\Sales\OdooService;
 
 class SincronizarController extends Controller
 {
+    public function index()
+    {
+        return $this->coincidencias();
+    }
+
+    public function clearCache()
+    {
+        \Illuminate\Support\Facades\Cache::forget('odoo:sync:partners');
+        \Illuminate\Support\Facades\Cache::forget('msp:customers:sync');
+
+        return back()->with('success', '🔄 Datos de Odoo y MSP actualizados correctamente.');
+    }
+
     public function coincidencias()
     {
         ['filas' => $filas, 'errors' => $errors] = $this->buildFilas();
@@ -22,16 +35,19 @@ class SincronizarController extends Controller
 
     public function sinCoincidencia()
     {
-        ['filas' => $filas, 'errors' => $errors, 'mspTodos' => $mspTodos] = $this->buildFilas();
+        ['filas' => $filas, 'errors' => $errors] = $this->buildFilas();
 
+        // Odoo que no tienen ningún match
         $odooSinMatch = array_values(array_filter($filas, fn($f) => $f['tipo'] === 'odoo_only'));
         usort($odooSinMatch, fn($a, $b) => strcmp($a['odoo_nombre'], $b['odoo_nombre']));
-        $mspTodos = array_values(array_filter($mspTodos, fn($r) => empty(trim($r['ReferenceId'] ?? ''))));
-        usort($mspTodos, fn($a, $b) => strcmp($a['CustomerName'], $b['CustomerName']));
+
+        // MSP que no tienen ningún match (aunque tengan un ReferenceId previo que no calza con nada)
+        $mspSinMatch = array_values(array_filter($filas, fn($f) => $f['tipo'] === 'msp_only'));
+        usort($mspSinMatch, fn($a, $b) => strcmp($a['msp_nombre'], $b['msp_nombre']));
 
         if (!empty($errors)) session()->flash('error', implode(' | ', $errors));
 
-        return view('admin.sincronizar.sin-coincidencia', compact('odooSinMatch', 'mspTodos'));
+        return view('admin.sincronizar.sin-coincidencia', compact('odooSinMatch', 'mspSinMatch'));
     }
 
     public function enlazar(\Illuminate\Http\Request $request): \Illuminate\Http\JsonResponse
@@ -164,9 +180,6 @@ class SincronizarController extends Controller
         // Normalizar ReferenceId (trim) antes de indexar
         $mspRaw = array_map(fn($r) => array_merge($r, ['ReferenceId' => trim($r['ReferenceId'] ?? '')]), $mspRaw);
 
-        $mspConRef = collect($mspRaw)->filter(fn($r) => !empty($r['ReferenceId']))->keyBy('ReferenceId');
-        $mspSinRef = collect($mspRaw)->filter(fn($r) =>  empty($r['ReferenceId']))->values();
-
         $normalize = fn(string $s): string => strtolower(trim(
             preg_replace('/\s+/', ' ',
             preg_replace('/[^a-záéíóúüña-z0-9\s]/iu', ' ',
@@ -177,31 +190,39 @@ class SincronizarController extends Controller
         $usadoOdoo = [];
         $usadoMsp  = [];
 
-        // Paso 1: exactos por account_no = ReferenceId
-        foreach ($odooMap->keys()->merge($mspConRef->keys())->unique() as $clave) {
-            $odoo = $odooMap->get($clave);
-            $msp  = $mspConRef->get($clave);
+        // Paso 1: exactos por account_no en ReferenceId (soporta múltiples cuentas: "Cuenta 1: 100, Cuenta 2: 101")
+        foreach ($mspRaw as $msp) {
+            $ref = $msp['ReferenceId'] ?? '';
+            if (empty($ref)) continue;
 
-            if ($odoo && $msp) {
-                similar_text($normalize($odoo['complete_name']), $normalize($msp['CustomerName']), $sim);
-                $filas[]           = [
-                    'odoo_nombre'   => $odoo['complete_name'],
-                    'numero_cuenta' => $odoo['account_no'],
-                    'msp_nombre'    => $msp['CustomerName'],
-                    'reference_id'  => $msp['ReferenceId'],
-                    'customer_id'   => $msp['CustomerId'] ?? null,
-                    'similitud'     => round($sim),
-                    'tipo'          => 'exacto',
-                ];
-                $usadoOdoo[$clave] = true;
-                $usadoMsp[$clave]  = true;
+            // Extraer todos los números de cuenta (secuencias de dígitos de 3 o más)
+            preg_match_all('/\b\d{3,}\b/', $ref, $matches);
+            $cuentasEnMsp = array_unique($matches[0] ?? []);
+
+            if (empty($cuentasEnMsp)) continue;
+
+            foreach ($cuentasEnMsp as $clave) {
+                $odoo = $odooMap->get($clave);
+                if ($odoo) {
+                    similar_text($normalize($odoo['complete_name']), $normalize($msp['CustomerName']), $sim);
+                    $filas[] = [
+                        'odoo_nombre'   => $odoo['complete_name'],
+                        'numero_cuenta' => $odoo['account_no'],
+                        'msp_nombre'    => $msp['CustomerName'],
+                        'reference_id'  => $msp['ReferenceId'],
+                        'customer_id'   => $msp['CustomerId'] ?? null,
+                        'similitud'     => round($sim),
+                        'tipo'          => 'exacto',
+                    ];
+                    $usadoOdoo[$clave] = true;
+                    $usadoMsp[$msp['CustomerId']] = true;
+                }
             }
         }
 
         // Paso 2: libres
         $odooLibres = $odooMap->filter(fn($_, $k) => !isset($usadoOdoo[$k]));
-        $mspLibres  = $mspConRef->filter(fn($_, $k) => !isset($usadoMsp[$k]))
-                                ->merge($mspSinRef->keyBy(fn($r, $i) => '__noref_' . $i));
+        $mspLibres  = collect($mspRaw)->filter(fn($r) => !isset($usadoMsp[$r['CustomerId']]));
 
         $odooNorm = $odooLibres->map(fn($r) => $normalize($r['complete_name']))->all();
 
@@ -224,9 +245,11 @@ class SincronizarController extends Controller
 
                 $cuentas   = array_keys($matches);
                 $bestSim   = reset($matches);
-                $refId     = count($cuentas) === 1
+
+                // Formato consistente: Cuenta 1: 100, Cuenta 2: 101...
+                $refId = count($cuentas) === 1
                     ? $cuentas[0]
-                    : implode(' | ', $cuentas);
+                    : implode(', ', array_map(fn($an, $idx) => "Cuenta " . ($idx + 1) . ": $an", $cuentas, array_keys($cuentas)));
 
                 $odooNombres = implode(' | ', array_map(
                     fn($an) => $odooLibres->get($an)['complete_name'] ?? $an,
