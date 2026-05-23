@@ -97,14 +97,14 @@ class MspReportApiController extends Controller
             ->setNpmBinary(env('BROWSERSHOT_NPM_PATH', '/usr/bin/npm'))
             ->noSandbox()
             ->addChromiumArguments([
-                '--disable-gpu',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--no-first-run',
+                'disable-dev-shm-usage',
+                'disable-gpu',
             ])
-            ->format('Letter')
-            ->margins(10, 10, 10, 10)
-            ->savePdf($outputPath);
+            ->format('A4')
+            ->showBackground()
+            ->waitUntilNetworkIdle()
+            ->timeout(120)
+            ->save($outputPath);
     }
 
     private function resolveLogoUrl(string $customer): ?string
