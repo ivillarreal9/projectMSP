@@ -19,7 +19,10 @@ Route::middleware(['auth:sanctum', 'throttle:10,1'])
 Route::middleware('throttle:30,1')
     ->post('/surveys/{token}', [SurveyApiController::class, 'receive']);
 
-// ── MSP Reports — PDF por cliente y período ──────────────────────────────────
+// ── MSP Reports — períodos disponibles y PDF por cliente ─────────────────────
+Route::middleware(['auth:sanctum', 'throttle:60,1'])
+    ->get('/v1/reports/msp/periodos', [MspReportApiController::class, 'periodos']);
+
 Route::middleware(['auth:sanctum', 'throttle:20,1'])
     ->get('/v1/reports/msp/pdf', [MspReportApiController::class, 'download']);
 
