@@ -9,9 +9,63 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Illuminate\Support\Facades\Cache;
 
 class MspReportApiController extends Controller
 {
+    /**
+     * GET /api/v1/reports/msp/pdf
+     *
+     * Parámetros:
+     *   - customer  (string, requerido) — nombre exacto del cliente
+     *   - periodo   (string, requerido) — ej: "April 2026"
+     *
+     * Autenticación: Bearer token (Sanctum)
+     *
+     * Respuestas:
+     *   - 200: archivo PDF (application/pdf)
+     *   - 404: cliente o período no encontrado
+     *   - 422: parámetros faltantes
+     *   - 500: error generando el PDF
+     */
+    /**
+     * GET /api/v1/reports/msp/periodos?customer=
+     *
+     * Retorna los períodos disponibles para un cliente.
+     */
+    public function periodos(Request $request): JsonResponse
+    {
+        $request->validate([
+            'customer' => 'required|string|max:255',
+        ]);
+
+        $customer = trim($request->input('customer'));
+
+        $periodos = Cache::remember(
+            'api_periodos_' . md5($customer),
+            now()->addHours(6),
+            fn () => MspReport::where('customer_name', $customer)
+                ->whereNotNull('periodo')
+                ->distinct()
+                ->orderByDesc('periodo')
+                ->pluck('periodo')
+                ->values()
+                ->toArray()
+        );
+
+        if (empty($periodos)) {
+            return response()->json([
+                'error'    => 'No se encontraron períodos para ese cliente.',
+                'customer' => $customer,
+            ], 404);
+        }
+
+        return response()->json([
+            'customer' => $customer,
+            'periodos' => $periodos,
+        ]);
+    }
+
     /**
      * GET /api/v1/reports/msp/pdf
      *
