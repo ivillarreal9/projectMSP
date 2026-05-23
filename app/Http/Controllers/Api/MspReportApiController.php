@@ -10,6 +10,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
 use Spatie\Browsershot\Browsershot;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class MspReportApiController extends Controller
 {
@@ -28,7 +29,7 @@ class MspReportApiController extends Controller
      *   - 422: parámetros faltantes
      *   - 500: error generando el PDF
      */
-    public function download(Request $request): Response|JsonResponse
+    public function download(Request $request): BinaryFileResponse|JsonResponse
     {
         $validated = $request->validate([
             'customer' => 'required|string|max:255',
