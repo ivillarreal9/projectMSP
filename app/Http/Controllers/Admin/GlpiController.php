@@ -8,10 +8,55 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Exception;
 
+/**
+ * Controlador del módulo GLPI.
+ *
+ * Gestiona el inventario de activos IT conectándose a la API REST de GLPI.
+ * Los datos se sirven desde caché (24h para items, 50min para session token)
+ * para minimizar llamadas a la API externa.
+ *
+ * Tipos de activos soportados (config/glpi.php → asset_types):
+ *   Computer, NetworkEquipment, Printer, Phone, Monitor, Peripheral
+ *
+ * Vistas:
+ *   - admin.glpi.index  → Dashboard con resumen por tipo de activo
+ *   - admin.glpi.items  → Listado agrupado por tipo+modelo con búsqueda y ordenamiento
+ *   - admin.glpi.show   → Detalle de un activo individual
+ *   - admin.glpi.create → Formulario de creación de activo
+ *   - admin.glpi.edit   → Formulario de edición de activo
+ *
+ * Rutas principales (prefijo /admin/glpi):
+ *   POST /session/init         → sessionInit()
+ *   POST /session/kill         → sessionKill()
+ *   POST /cache/refresh        → refreshCache()
+ *   GET  /                     → index()
+ *   GET  /{itemtype}           → items()
+ *   GET  /{itemtype}/{id}      → show()
+ *   POST /{itemtype}           → store()
+ *   GET  /{itemtype}/{id}/edit → edit()
+ *   PUT  /{itemtype}/{id}      → update()
+ *
+ * @see \App\Services\GlpiService  Capa de acceso a la API GLPI con caché
+ */
 class GlpiController extends Controller
 {
+    /**
+     * Inyecta GlpiService vía constructor (IoC Container de Laravel).
+     *
+     * @param  \App\Services\GlpiService  $glpi
+     */
     public function __construct(protected GlpiService $glpi) {}
 
+    /**
+     * Inicia sesión en la API GLPI y almacena el token de sesión en caché.
+     *
+     * El token de sesión se almacena en la caché de Laravel con TTL de 50 minutos
+     * para reutilizarse en llamadas subsiguientes sin re-autenticar.
+     * También marca `glpi_session_active` en la sesión del usuario para indicar
+     * el estado en la UI.
+     *
+     * @return \Illuminate\Http\RedirectResponse
+     */
     public function sessionInit()
     {
         try {
@@ -23,6 +68,15 @@ class GlpiController extends Controller
         }
     }
 
+    /**
+     * Cierra la sesión activa en GLPI e invalida el token de caché.
+     *
+     * Siempre elimina el marcador de sesión del usuario (`glpi_session_active`)
+     * incluso si la llamada a la API falla, para evitar que la UI muestre un estado
+     * incorrecto de sesión activa.
+     *
+     * @return \Illuminate\Http\RedirectResponse
+     */
     public function sessionKill()
     {
         try {
@@ -35,6 +89,15 @@ class GlpiController extends Controller
         }
     }
 
+    /**
+     * Fuerza la recarga de la caché de inventario GLPI.
+     *
+     * Ejecuta el mismo proceso que el comando artisan `glpi:warm-cache`,
+     * pero disparado manualmente desde la interfaz web. Útil cuando el scheduler
+     * no ha corrido aún y se necesitan datos actualizados inmediatamente.
+     *
+     * @return \Illuminate\Http\RedirectResponse
+     */
     public function refreshCache()
     {
         try {
@@ -46,6 +109,23 @@ class GlpiController extends Controller
         }
     }
 
+    /**
+     * Dashboard de GLPI con resumen de inventario por tipo de activo.
+     *
+     * Para NetworkEquipment hace una única llamada con `expand_dropdowns=true`
+     * para obtener todos los equipos y sub-clasificarlos por tipo (Switch, Router, etc.)
+     * y contar cuántos están en depósito. Este diseño reemplaza el enfoque anterior
+     * que hacía 2 llamadas por tipo (count + depósito), reduciendo el número de
+     * requests a la API GLPI en el dashboard.
+     *
+     * Para los demás tipos solo obtiene el total (range=0-0) para eficiencia.
+     * Los errores por tipo son ignorados silenciosamente (total=0) para no romper el dashboard.
+     *
+     * Un activo se considera "en depósito" si su estado (`states_id.name`) contiene "dep"
+     * (coincide con "Depósito", "En depósito", etc., de forma case-insensitive).
+     *
+     * @return \Illuminate\View\View  Vista admin.glpi.index con: summary (array por tipo)
+     */
     public function index()
     {
         $assetTypes = config('glpi.asset_types');
@@ -113,6 +193,31 @@ class GlpiController extends Controller
         return view('admin.glpi.index', compact('summary'));
     }
 
+    /**
+     * Listado de activos de un tipo específico agrupados por tipo → modelo.
+     *
+     * Valida que el itemtype sea uno de los tipos permitidos en config/glpi.php;
+     * devuelve 404 para cualquier tipo no reconocido.
+     *
+     * Agrupación: Los activos se organizan jerárquicamente:
+     *   Tipo (ej: Switch) → Modelo (ej: Cisco Catalyst 9200) → { total, deposito, items[] }
+     *
+     * Ordenamiento disponible (parámetro `sort`):
+     *  - 'total_desc' (por defecto): más unidades primero
+     *  - 'deposito_desc': más en depósito primero
+     *  - 'alfa_asc': alfabético ascendente
+     *  - 'alfa_desc': alfabético descendente
+     *
+     * La búsqueda filtra por nombre del activo en el lado del cliente (post-query)
+     * ya que la API GLPI no soporta filtros de texto avanzados de forma eficiente.
+     *
+     * El campo de tipo y modelo varía por itemtype (ej: networkequipmenttypes_id vs computertypes_id),
+     * y los dropdowns vienen expandidos como objetos {id, name} cuando expand_dropdowns=true.
+     *
+     * @param  \Illuminate\Http\Request  $request   Parámetros: search (opcional), sort (opcional)
+     * @param  string                    $itemtype  Tipo de activo GLPI (Computer, NetworkEquipment, etc.)
+     * @return \Illuminate\View\View                Vista admin.glpi.items
+     */
     public function items(Request $request, string $itemtype)
     {
         $assetTypes = config('glpi.asset_types');
@@ -224,6 +329,13 @@ class GlpiController extends Controller
         ));
     }
 
+    /**
+     * Vista de detalle de un activo GLPI individual.
+     *
+     * @param  string  $itemtype  Tipo de activo GLPI
+     * @param  int     $id        ID del activo en GLPI
+     * @return \Illuminate\View\View  Vista admin.glpi.show con: item, itemtype, label
+     */
     public function show(string $itemtype, int $id)
     {
         $assetTypes = config('glpi.asset_types');
@@ -239,6 +351,16 @@ class GlpiController extends Controller
         return view('admin.glpi.show', compact('item', 'itemtype', 'label'));
     }
 
+    /**
+     * Formulario de creación de un nuevo activo GLPI.
+     *
+     * Carga la lista de entidades disponibles para asignar el activo.
+     * Si la carga de entidades falla (ej: sesión GLPI expirada), devuelve
+     * array vacío para que el formulario siga funcionando sin el selector de entidad.
+     *
+     * @param  string  $itemtype  Tipo de activo a crear
+     * @return \Illuminate\View\View  Vista admin.glpi.create con: itemtype, label, entities
+     */
     public function create(string $itemtype)
     {
         $assetTypes = config('glpi.asset_types');
@@ -248,6 +370,16 @@ class GlpiController extends Controller
         return view('admin.glpi.create', compact('itemtype', 'label', 'entities'));
     }
 
+    /**
+     * Persiste un nuevo activo en GLPI vía API REST.
+     *
+     * Los campos null son filtrados con array_filter antes de enviarlos a la API
+     * para no sobreescribir valores por defecto de GLPI con valores vacíos.
+     *
+     * @param  \Illuminate\Http\Request  $request   Campos: name (req), serial, otherserial, comment, entities_id
+     * @param  string                    $itemtype  Tipo de activo GLPI
+     * @return \Illuminate\Http\RedirectResponse
+     */
     public function store(Request $request, string $itemtype)
     {
         $assetTypes = config('glpi.asset_types');
@@ -267,6 +399,13 @@ class GlpiController extends Controller
         }
     }
 
+    /**
+     * Formulario de edición de un activo GLPI existente.
+     *
+     * @param  string  $itemtype  Tipo de activo GLPI
+     * @param  int     $id        ID del activo en GLPI
+     * @return \Illuminate\View\View  Vista admin.glpi.edit con: item, itemtype, label, entities
+     */
     public function edit(string $itemtype, int $id)
     {
         $assetTypes = config('glpi.asset_types');
@@ -279,6 +418,17 @@ class GlpiController extends Controller
         return view('admin.glpi.edit', compact('item', 'itemtype', 'label', 'entities'));
     }
 
+    /**
+     * Actualiza un activo existente en GLPI vía API REST.
+     *
+     * Al igual que store(), filtra valores null antes de enviar para preservar
+     * los campos que el usuario dejó vacíos sin limpiar datos existentes en GLPI.
+     *
+     * @param  \Illuminate\Http\Request  $request   Campos: name (req), serial, otherserial, comment, entities_id
+     * @param  string                    $itemtype  Tipo de activo GLPI
+     * @param  int                       $id        ID del activo en GLPI
+     * @return \Illuminate\Http\RedirectResponse
+     */
     public function update(Request $request, string $itemtype, int $id)
     {
         $assetTypes = config('glpi.asset_types');

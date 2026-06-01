@@ -7,14 +7,39 @@ use App\Models\MspClient;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
+/**
+ * Controlador para la gestión masiva de datos complementarios de clientes MSP.
+ *
+ * Permite actualizar en lote los campos adicionales (email de contacto y número
+ * de cuenta) de los clientes registrados en la tabla local msp_clients. Este
+ * controlador no crea registros nuevos — únicamente actualiza clientes que ya
+ * existen en la base de datos.
+ *
+ * Ruta base: /api/v1/msp-clients
+ * Autenticación: Bearer token (Sanctum)
+ */
 class MspClientController extends Controller
 {
     /**
-     * POST /api/v1/msp-clients/bulk-update
+     * Actualiza en lote el email de contacto y/o número de cuenta de clientes MSP.
      *
-     * Actualiza email_cliente y/o numero_cuenta de uno o varios clientes MSP.
-     * Solo actualiza clientes que ya existen en la tabla (no crea nuevos).
-     * Ignora filas sin campos que actualizar.
+     * Procesa hasta 1 000 clientes por llamada. Por cada entrada del array:
+     * - Si la fila no tiene campos a actualizar (ambos nulos o vacíos) se omite y
+     *   suma al contador `skipped`.
+     * - Si el cliente no existe en la tabla local se omite y suma al contador `skipped`.
+     * - Si la actualización falla con excepción se registra en el array `errors`.
+     * La respuesta siempre es 200 aunque no se haya actualizado ningún registro;
+     * los contadores reflejan el resultado.
+     *
+     * POST /api/v1/msp-clients/bulk-update
+     * Autenticación: Bearer token (Sanctum)
+     *
+     * @param  Request $request  Requiere: clients (array, min:1, max:1000) donde cada elemento
+     *                           tiene: customer_name (string, max:255, requerido),
+     *                                  email_cliente (string email, max:255, nullable),
+     *                                  numero_cuenta (string, max:100, nullable)
+     * @return JsonResponse      200 con { updated: int, skipped: int, errors: [], total: int }
+     *                           | 422 validación fallida (array vacío, campos inválidos)
      */
     public function bulkUpdate(Request $request): JsonResponse
     {

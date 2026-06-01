@@ -11,27 +11,34 @@ use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Illuminate\Support\Facades\Cache;
 
+/**
+ * Controlador para descarga de reportes MSP en PDF desde la aplicación móvil.
+ *
+ * Expone dos endpoints: uno para consultar los períodos disponibles de un cliente
+ * y otro para descargar el PDF del reporte correspondiente. La generación de PDF
+ * se delega a MspPdfService, que aplica caché de 48 horas para evitar regenerar
+ * el mismo documento. El listado de períodos también se almacena en caché por 6 horas.
+ *
+ * Ruta base: /api/v1/reports/msp
+ * Autenticación: Bearer token (Sanctum)
+ */
 class MspReportApiController extends Controller
 {
     /**
-     * GET /api/v1/reports/msp/pdf
+     * Lista los períodos con reportes disponibles para un cliente MSP.
      *
-     * Parámetros:
-     *   - customer  (string, requerido) — nombre exacto del cliente
-     *   - periodo   (string, requerido) — ej: "April 2026"
+     * Consulta la base de datos local (tabla msp_reports) y retorna los períodos
+     * distintos ordenados de más reciente a más antiguo. Cada período se incluye
+     * con su valor original en inglés (ej: "April 2026") y su etiqueta traducida
+     * al español (ej: "Abril 2026"). Los resultados se cachean 6 horas por cliente.
      *
+     * GET /api/v1/reports/msp/periodos?customer={customer}
      * Autenticación: Bearer token (Sanctum)
      *
-     * Respuestas:
-     *   - 200: archivo PDF (application/pdf)
-     *   - 404: cliente o período no encontrado
-     *   - 422: parámetros faltantes
-     *   - 500: error generando el PDF
-     */
-    /**
-     * GET /api/v1/reports/msp/periodos?customer=
-     *
-     * Retorna los períodos disponibles para un cliente.
+     * @param  Request $request  Requiere: customer (string, max:255) — nombre exacto del cliente
+     * @return JsonResponse      200 con { customer: string, periodos: [{ value, label }] }
+     *                           | 404 si no hay períodos para ese cliente
+     *                           | 422 validación fallida
      */
     public function periodos(Request $request): JsonResponse
     {
@@ -71,19 +78,25 @@ class MspReportApiController extends Controller
     }
 
     /**
-     * GET /api/v1/reports/msp/pdf
+     * Descarga el PDF del reporte MSP de un cliente para un período específico.
      *
-     * Parámetros:
-     *   - customer  (string, requerido) — nombre exacto del cliente
-     *   - periodo   (string, requerido) — ej: "April 2026"
+     * Verifica primero que exista al menos un reporte en la base de datos local
+     * para la combinación customer + periodo antes de intentar generar el PDF.
+     * La generación se delega a MspPdfService, que reutiliza el archivo si ya
+     * existe en caché (48h), evitando regeneraciones costosas en Chromium.
+     * El nombre del archivo descargado se construye automáticamente según
+     * la nomenclatura interna del proyecto.
      *
+     * GET /api/v1/reports/msp/pdf?customer={customer}&periodo={periodo}
      * Autenticación: Bearer token (Sanctum)
      *
-     * Respuestas:
-     *   - 200: archivo PDF (application/pdf)
-     *   - 404: cliente o período no encontrado
-     *   - 422: parámetros faltantes
-     *   - 500: error generando el PDF
+     * @param  Request $request  Requiere: customer (string, max:255) — nombre exacto del cliente
+     *                                     periodo  (string, max:100)  — ej: "April 2026"
+     * @return BinaryFileResponse|JsonResponse
+     *         200 application/pdf con el archivo adjunto para descarga
+     *         | 404 si no hay reportes para esa combinación cliente/período
+     *         | 422 validación fallida
+     *         | 500 error al generar el PDF (Chromium/Browsershot)
      */
     public function download(Request $request): BinaryFileResponse|JsonResponse
     {

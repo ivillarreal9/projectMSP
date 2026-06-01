@@ -5,12 +5,48 @@ namespace App\Services\Sales;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
 
+/**
+ * Servicio del dashboard ejecutivo de ventas.
+ *
+ * Agrega y calcula los indicadores clave de rendimiento (KPIs) y tendencias
+ * del área de ventas consultando datos de Odoo a través de OdooService.
+ *
+ * Provee tres tipos de análisis:
+ *   1. KPIs del período seleccionado (leads, ganadas, revenue, win rate)
+ *   2. Tendencia mensual del año (evolución mes a mes)
+ *   3. Stats por ejecutiva (desglose individual de performance)
+ *
+ * Todos los resultados se cachean 24 h porque los datos históricos de Odoo
+ * no cambian con frecuencia y las consultas son costosas (múltiples llamadas JSON-RPC).
+ *
+ * Dependencias externas:
+ *   - OdooService: todas las consultas a Odoo se delegan a este servicio
+ *   - config/sales.php: executive_ids lista los usuarios ejecutivos del dashboard
+ */
 class DashboardService
 {
-    const CACHE_TTL = 86400; // 24 horas
+    /** TTL de caché para todos los datos del dashboard: 24 horas. */
+    const CACHE_TTL = 86400;
 
+    /**
+     * @param  OdooService $odoo Inyectado automáticamente por el contenedor de Laravel
+     */
     public function __construct(private OdooService $odoo) {}
 
+    /**
+     * Obtiene los KPIs del dashboard para un rango de fechas.
+     *
+     * Calcula en una sola consulta (por métrica):
+     *   - leads:         leads creados en el período
+     *   - won:           oportunidades ganadas en el período
+     *   - revenueWon:    revenue esperado de las oportunidades ganadas
+     *   - revenueOrders: monto real de órdenes de venta confirmadas
+     *   - winRate:       porcentaje de cierre = won / (leads + won)
+     *
+     * @param  string $dateFrom Fecha de inicio en formato 'Y-m-d H:i:s'
+     * @param  string $dateTo   Fecha de fin en formato 'Y-m-d H:i:s'
+     * @return array            Mapa: leads, won, revenueWon, revenueOrders, winRate
+     */
     public function getDashboardKpis(string $dateFrom, string $dateTo): array
     {
         $cacheKey = "dashboard:kpis:{$dateFrom}:{$dateTo}";
@@ -50,6 +86,16 @@ class DashboardService
         });
     }
 
+    /**
+     * Calcula la tendencia mensual de ventas para todos los meses de un año.
+     *
+     * Para cada mes del 1 al 12 ejecuta 3 consultas a Odoo (leads, won, revenue_won).
+     * El resultado incluye todos los meses aunque no tengan datos, para que los
+     * gráficos de línea siempre muestren el año completo.
+     *
+     * @param  int   $year Año para el que se calcula la tendencia
+     * @return array       Array de 12 entradas, cada una con: month, label, leads, won, revenue
+     */
     public function getMonthlyTrend(int $year): array
     {
         $cacheKey = "dashboard:monthly:{$year}";
@@ -93,6 +139,21 @@ class DashboardService
         });
     }
 
+    /**
+     * Obtiene el rendimiento de cada ejecutiva configurada en sales.executive_ids para el período.
+     *
+     * Por cada ejecutiva ejecuta 3 consultas separadas a Odoo (won, leads, revenue_won)
+     * y calcula su win_rate individual. El resultado se ordena de mayor a menor revenue
+     * para presentar el ranking de performance en el dashboard.
+     *
+     * Nota: hace N*3 llamadas a Odoo donde N = número de ejecutivas. Para N > 5
+     * considerar migrar a getMetricsForAllExecutives() de OdooService que hace 4 bulk calls.
+     *
+     * @param  string $dateFrom Fecha de inicio en formato 'Y-m-d H:i:s'
+     * @param  string $dateTo   Fecha de fin en formato 'Y-m-d H:i:s'
+     * @return array            Lista de ejecutivas ordenada por revenue desc, cada una con:
+     *                          id, name, image, leads, won, revenue, win_rate
+     */
     public function getStatsByExecutive(string $dateFrom, string $dateTo): array
     {
         $cacheKey = "dashboard:byexec:{$dateFrom}:{$dateTo}";

@@ -5,6 +5,27 @@ namespace App\Services;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
+/**
+ * Servicio de gestión de tickets de Telefonía (módulo Meta 2).
+ *
+ * Orquesta un pipeline de 3 pasos para obtener y enriquecer tickets de Telefonía
+ * desde la misma API MSP que usa MspService, pero con foco en un tipo específico:
+ *   - Paso 1: Obtener IDs de tickets de Telefonía del mes/año → caché 24 h
+ *   - Paso 2: Obtener el detalle de esos tickets por ID → caché 24 h
+ *   - Paso 3: Obtener custom fields en paralelo via Http::pool → caché 48 h por ticket
+ *
+ * Los custom fields de tipo "código" (Causa, Ubicación, Reporte, etc.) se truncan
+ * al primer token (antes del tab o del primer espacio) porque la API devuelve valores
+ * en formato "CÓDIGO\tDescripción completa" y la vista solo muestra el código.
+ *
+ * También genera el informe PDF mensual con estadísticas de reparación por provincia
+ * (% de tickets resueltos en ≤ 48 horas hábiles usando PanamaHolidays).
+ *
+ * Dependencias externas:
+ *   - API MSP       : mismas credenciales que MspService (SERVICES_MSP_*)
+ *   - Http::pool    : paralelización de EP3 en chunks de 10
+ *   - PanamaHolidays: cálculo de horas laborables excluyendo feriados de Panamá
+ */
 class Meta2Service
 {
     protected string $baseUrl;
@@ -34,6 +55,11 @@ class Meta2Service
         'Solución - Acción',
     ];
 
+    /**
+     * Inicializa el servicio con las credenciales MSP compartidas con MspService.
+     *
+     * @throws \Exception si USERNAME o PASSWORD no están definidos en el .env
+     */
     public function __construct()
     {
         $username = config('services.msp.username');
@@ -49,7 +75,13 @@ class Meta2Service
     }
 
     /**
-     * Petición GET simple a la API
+     * Ejecuta una petición GET autenticada y retorna el array 'value' de la respuesta OData.
+     *
+     * Retorna [] en caso de error HTTP para no interrumpir el pipeline de 3 pasos.
+     *
+     * @param  string $endpoint Ruta relativa + query string (ya codificada)
+     * @param  int    $timeout  Tiempo límite en segundos (default 60)
+     * @return array            Array de registros del campo 'value', o [] si hay error
      */
     protected function get(string $endpoint, int $timeout = 60): array
     {
@@ -69,7 +101,14 @@ class Meta2Service
     private const CACHE_ALL     = 86400;  // 24 horas — listado completo de Telefonía
 
     /**
-     * Paso 1 — Obtener solo los IDs de tickets de Telefonía del mes/año
+     * Paso 1 — Obtiene únicamente los IDs de tickets de Telefonía completados en el mes/año dado.
+     *
+     * Se consultan solo los TicketId (campo mínimo) para minimizar el payload de la respuesta.
+     * Los IDs se cachean 24 h — los tickets de un mes cerrado no cambian.
+     *
+     * @param  int $month Número del mes (1–12)
+     * @param  int $year  Año con 4 dígitos
+     * @return array      Array plano de UUIDs de ticket (TicketId)
      */
     public function getTelefoniaIds(int $month, int $year): array
     {
@@ -91,7 +130,13 @@ class Meta2Service
     }
 
     /**
-     * Paso 2 — Con los IDs, traer el detalle de cada ticket
+     * Paso 2 — Obtiene el detalle de los tickets dados sus IDs.
+     *
+     * Usa el operador OData "in" para obtener todos los tickets en una sola llamada.
+     * La clave de caché es el md5 de los IDs para soportar distintos subconjuntos.
+     *
+     * @param  array $ids Lista de UUIDs de tickets a consultar
+     * @return array      Lista de tickets con TicketId, TicketNumber, TicketIssueTypeName, CreatedDate, CompletedDate
      */
     protected function getTicketsByIds(array $ids): array
     {
@@ -111,7 +156,15 @@ class Meta2Service
     }
 
     /**
-     * Determinar si un campo debe mostrar solo el código
+     * Determina si un campo custom debe mostrarse solo con su código (primer token).
+     *
+     * Los valores de estos campos en la API MSP tienen formato "CÓDIGO\tDescripción"
+     * o "CÓDIGO descripción". La vista solo necesita el código para los campos
+     * de clasificación técnica. El fallback con str_starts_with cubre variaciones
+     * con/sin tilde en los nombres del campo.
+     *
+     * @param  string $name Nombre del campo custom field
+     * @return bool         true si el campo debe mostrarse solo con el código
      */
     protected function isCodeField(string $name): bool
     {
@@ -129,7 +182,16 @@ class Meta2Service
     }
 
     /**
-     * Paso 3 — Custom fields en paralelo con Http::pool (con caché por ticket).
+     * Paso 3 — Obtiene los custom fields de múltiples tickets en paralelo.
+     *
+     * Estrategia de optimización:
+     *   - Pre-carga desde caché los tickets ya conocidos (caché 48 h).
+     *   - Los no cacheados se consultan en chunks de 10 via Http::pool.
+     *   - Entre chunks (si hay más de uno) espera 200 ms para no saturar la API.
+     *   - Los campos "código" se truncan con extractCode() antes de cachear.
+     *
+     * @param  array $ticketIds Lista de UUIDs de tickets a enriquecer
+     * @return array            Mapa [ticketId => ['ticketId' => ..., 'Causa' => ..., 'Provincia' => ..., ...]]
      */
     protected function getCustomFieldsPool(array $ticketIds): array
     {
@@ -202,7 +264,15 @@ class Meta2Service
     }
 
     /**
-     * Método principal — orquesta los 3 pasos (con caché por mes/año/búsqueda).
+     * Método principal — orquesta los 3 pasos para la vista de listado de Telefonía.
+     *
+     * Con búsqueda activa el TTL se reduce a 1 h (datos filtrados no se reutilizan tanto).
+     * Sin búsqueda el resultado completo se cachea 24 h.
+     *
+     * @param  string|null $search Término de búsqueda por número o tipo de ticket (null = sin filtro)
+     * @param  int|null    $month  Mes (1–12); si es null retorna []
+     * @param  int|null    $year   Año; si es null retorna []
+     * @return array               Lista de tickets transformados al formato de la vista
      */
     public function getTelefoniaTickets(?string $search = null, ?int $month = null, ?int $year = null): array
     {
@@ -241,7 +311,14 @@ class Meta2Service
     }
 
     /**
-     * Transformar datos al formato de la vista
+     * Transforma el array raw de tickets al formato estandarizado de la vista.
+     *
+     * Las fechas se convierten de UTC a hora de Panamá (UTC-5) con formatDate().
+     * Los custom_fields se adjuntan como sub-array al ticket transformado.
+     *
+     * @param  array $tickets Array de tickets enriquecidos con customFields adjuntos
+     * @return array          Lista de tickets con claves: ticket_id, ticket_number, issue_type,
+     *                        created_date, completed_date, custom_fields
      */
     protected function transformTickets(array $tickets): array
     {
@@ -262,7 +339,13 @@ class Meta2Service
     }
 
     /**
-     * Formatear fecha subiendo -5 horas (UTC → Panamá)
+     * Convierte una fecha UTC de la API MSP a hora de Panamá (UTC-5).
+     *
+     * Panamá no observa horario de verano — el ajuste es siempre fijo de -5 h.
+     * Retorna '—' si la cadena está vacía, y la cadena original si Carbon no puede parsearla.
+     *
+     * @param  string $date Fecha ISO 8601 en UTC (p.ej. "2024-03-15T14:30:00Z")
+     * @return string       Fecha formateada como "d/m/Y H:i" en UTC-5, o '—' si vacía
      */
     protected function formatDate(string $date): string
     {
@@ -275,7 +358,14 @@ class Meta2Service
     }
 
     /**
-     * Preparar datos completos para el PDF del informe
+     * Obtiene los datos completos para el PDF del informe mensual de Telefonía.
+     *
+     * Cachea 48 h (datos históricos de un mes cerrado no cambian).
+     * Delega la construcción real a buildPdfReportData().
+     *
+     * @param  int $month Mes (1–12)
+     * @param  int $year  Año
+     * @return array      Estructura del informe: ['month' => ..., 'year' => ..., 'summary' => [...]]
      */
     public function getPdfReportData(int $month, int $year): array
     {
@@ -284,6 +374,24 @@ class Meta2Service
         );
     }
 
+    /**
+     * Construye el informe mensual de Telefonía agrupado por provincia.
+     *
+     * Para cada provincia calcula:
+     *   - Reparados: tickets completados en el mes con Provincia definida.
+     *   - Pendientes: tickets SIN CompletedDate que tengan Provincia asignada.
+     *   - Porcentaje en ≤ 48 h hábiles: usando PanamaHolidays::workingHoursBetween().
+     *
+     * Los tickets sin CompletedDate se obtienen de getAllTelefoniaTickets() (sin filtro
+     * de fecha) porque aún están abiertos y no aparecen en getTelefoniaIds().
+     *
+     * @param  int $month Mes (1–12)
+     * @param  int $year  Año
+     * @return array      Estructura: ['month' => string, 'year' => int, 'summary' => [
+     *                      ['provincia' => ..., 'pendientes' => ..., 'reparados' => ...,
+     *                       'porcentaje' => ..., 'tickets' => [...]], ...
+     *                    ]]
+     */
     protected function buildPdfReportData(int $month, int $year): array
     {
         $completedIds = $this->getTelefoniaIds($month, $year);
@@ -364,7 +472,12 @@ class Meta2Service
     }
 
     /**
-     * Todos los tickets de Telefonía sin filtro de fecha
+     * Retorna todos los tickets de Telefonía sin filtro de fecha (abiertos y cerrados).
+     *
+     * Se usa en buildPdfReportData() para identificar tickets pendientes (sin CompletedDate)
+     * que no aparecerían en getTelefoniaIds() que filtra por mes completado.
+     *
+     * @return array Lista de tickets con TicketId, TicketNumber, CompletedDate, CreatedDate
      */
     protected function getAllTelefoniaTickets(): array
     {
@@ -377,7 +490,15 @@ class Meta2Service
     }
 
     /**
-     * Tickets por IDs con fechas completas
+     * Obtiene tickets por IDs incluyendo CreatedDate y CompletedDate completas.
+     *
+     * Variante de getTicketsByIds() sin caché, usada en buildPdfReportData()
+     * donde se necesita frescura de datos y las fechas completas para el cálculo
+     * de horas laborables.
+     *
+     * @param  array $ids Lista de UUIDs de tickets
+     * @return array      Lista de tickets con TicketId, TicketNumber, TicketIssueTypeName,
+     *                    CreatedDate, CompletedDate ordenados por TicketNumber desc
      */
     protected function getTicketsByIdsWithDates(array $ids): array
     {
@@ -392,6 +513,16 @@ class Meta2Service
         );
     }
 
+    /**
+     * Retorna los custom fields raw y aplanados de un ticket para diagnóstico.
+     *
+     * Útil durante desarrollo para descubrir los nombres exactos de campos
+     * que devuelve la API MSP y verificar la lógica de extractCode().
+     * No cachea el resultado — siempre consulta la API en tiempo real.
+     *
+     * @param  string $ticketId UUID del ticket a inspeccionar
+     * @return array            Mapa con 'ticketId', 'raw' (campos originales) y 'aplanado' (procesados)
+     */
     public function debugCustomFields(string $ticketId): array
     {
         $fieldFilter = $this->buildFieldFilter();
@@ -419,7 +550,14 @@ class Meta2Service
     }
 
     /**
-     * Petición GET que devuelve el JSON directamente (sin wrapper 'value')
+     * Ejecuta una petición GET y retorna el JSON completo sin extraer 'value'.
+     *
+     * Necesario para el endpoint /customfields que en algunas versiones de la API
+     * devuelve el array directamente en la raíz (sin wrapper OData).
+     *
+     * @param  string $endpoint Ruta relativa + query string
+     * @param  int    $timeout  Tiempo límite en segundos (default 60)
+     * @return array            JSON completo de la respuesta, o [] si hay error HTTP
      */
     protected function getRaw(string $endpoint, int $timeout = 60): array
     {
@@ -432,6 +570,15 @@ class Meta2Service
         return $response->json() ?? [];
     }
 
+    /**
+     * Construye el filtro OData para solicitar solo los custom fields requeridos.
+     *
+     * Genera una cadena "TicketTypeFieldId eq {id1} or TicketTypeFieldId eq {id2} ..."
+     * que se aplica al endpoint /tickets/{id}/customfields para evitar traer todos
+     * los campos (pueden ser decenas) cuando solo necesitamos ~7.
+     *
+     * @return string Fragmento de filtro OData para los IDs en $requiredFieldIds
+     */
     protected function buildFieldFilter(): string
     {
         $conditions = array_map(
@@ -443,7 +590,14 @@ class Meta2Service
     }
 
     /**
-     * Extraer solo el código del valor (antes del \t o del primer espacio)
+     * Extrae el código del valor de un campo clasificatorio.
+     *
+     * Los valores de la API tienen formato "CÓDIGO\tDescripción" o "CÓDIGO descripción".
+     * Solo necesitamos el código para mostrar en la tabla del informe.
+     * El tab tiene prioridad sobre el espacio para manejar ambos formatos.
+     *
+     * @param  string $value Valor raw del campo custom field
+     * @return string        Solo el código (primera palabra o token antes del tab)
      */
     protected function extractCode(string $value): string
     {
@@ -459,7 +613,14 @@ class Meta2Service
     }
 
     /**
-     * Paso 2 público — para el stream SSE
+     * Paso 2 público — retorna tickets por IDs aplicando filtro de búsqueda opcional.
+     *
+     * Expuesto como público para que el controlador SSE pueda llamarlo como segundo
+     * evento separado y reportar progreso al cliente antes de cargar los custom fields.
+     *
+     * @param  array  $ids    Lista de UUIDs de tickets
+     * @param  string $search Término de búsqueda (vacío = sin filtro)
+     * @return array          Lista de tickets filtrados por número o tipo
      */
     public function getTicketsByIdsPublic(array $ids, string $search = ''): array
     {
@@ -477,7 +638,13 @@ class Meta2Service
     }
 
     /**
-     * Paso 3 público — adjunta custom fields y transforma
+     * Paso 3 público — adjunta custom fields a los tickets y aplica la transformación final.
+     *
+     * Expuesto como público para que el controlador SSE lo llame como tercer evento
+     * y pueda emitir el evento "done" con el dataset completo al finalizar.
+     *
+     * @param  array $tickets Lista de tickets (output de getTicketsByIdsPublic)
+     * @return array          Lista transformada con custom_fields incrustados, lista para la vista
      */
     public function attachCustomFields(array $tickets): array
     {

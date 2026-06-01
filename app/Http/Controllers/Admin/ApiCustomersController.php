@@ -13,8 +13,38 @@ use Maatwebsite\Excel\Concerns\WithStyles;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 
+/**
+ * Controlador del módulo API Customers.
+ *
+ * Consulta y exporta el listado de clientes directamente desde la API MSP externa.
+ * A diferencia del módulo MSP Reports que trabaja con datos importados a la base de datos,
+ * este módulo hace llamadas en tiempo real a la API para obtener el directorio completo
+ * de clientes con su CustomerId.
+ *
+ * Casos de uso:
+ *  - Obtener el CustomerId de un cliente para configurarlo en MSP Reports.
+ *  - Exportar el directorio completo de clientes MSP a Excel para auditoría.
+ *
+ * Autenticación: HTTP Basic Auth con credenciales AZURE_MSP_USERNAME / AZURE_MSP_PASSWORD
+ * configuradas en config/services.php → services.msp.
+ *
+ * Vistas:
+ *   - admin.api-customers.index → Vista con botón de consulta y tabla de resultados
+ *
+ * Rutas principales (prefijo /admin/api-customers):
+ *   GET  /        → index()
+ *   GET  /fetch   → fetch()   [AJAX]
+ *   GET  /export  → export()  [descarga Excel]
+ */
 class ApiCustomersController extends Controller
 {
+    /**
+     * Construye el header de autenticación HTTP Basic para la API MSP.
+     *
+     * Codifica en Base64 el par "usuario:contraseña" según el estándar RFC 7617.
+     *
+     * @return string  Header completo: "Basic {base64(usuario:password)}"
+     */
     private function getAuthHeader(): string
     {
         $username = config('services.msp.username');
@@ -22,17 +52,40 @@ class ApiCustomersController extends Controller
         return 'Basic ' . base64_encode($username . ':' . $password);
     }
 
+    /**
+     * Obtiene la URL base de la API MSP sin barra final.
+     *
+     * @return string  URL base (ej: "https://api.msp.ovnicom.com/v1")
+     */
     private function getBaseUrl(): string
     {
         return rtrim(config('services.msp.base_url'), '/');
     }
 
+    /**
+     * Vista principal del módulo API Customers.
+     *
+     * Muestra el estado de las credenciales MSP y el formulario de consulta.
+     * Los datos reales se cargan vía AJAX al hacer clic en el botón de consulta.
+     *
+     * @return \Illuminate\View\View  Vista admin.api-customers.index con: credencialesOk
+     */
     public function index()
     {
         $credencialesOk = !empty(config('services.msp.username')) && !empty(config('services.msp.password'));
         return view('admin.api-customers.index', compact('credencialesOk'));
     }
 
+    /**
+     * Consulta el directorio completo de clientes desde la API MSP (endpoint AJAX).
+     *
+     * Ordena los resultados por StartDate descendente (clientes más recientes primero).
+     * Solo selecciona CustomerName y CustomerId para minimizar el payload de respuesta.
+     * Timeout de 60 segundos para manejar respuestas lentas de la API externa.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\JsonResponse  {data: array, total: int} o {error: string}
+     */
     public function fetch(Request $request)
     {
         if (!config('services.msp.username')) {
@@ -59,6 +112,16 @@ class ApiCustomersController extends Controller
         ]);
     }
 
+    /**
+     * Exporta el directorio de clientes MSP a un archivo Excel (.xlsx).
+     *
+     * Usa una clase anónima inline que implementa las interfaces de Maatwebsite Excel
+     * para definir encabezados, datos, auto-size de columnas y estilos (header violeta).
+     * Realiza la misma consulta que fetch() pero retorna un archivo descargable.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Symfony\Component\HttpFoundation\BinaryFileResponse|\Illuminate\Http\RedirectResponse
+     */
     public function export(Request $request)
     {
         if (!config('services.msp.username')) {

@@ -18,12 +18,59 @@ use Illuminate\Support\Facades\Storage;
 use Maatwebsite\Excel\Facades\Excel;
 use Spatie\Browsershot\Browsershot;
 
+/**
+ * Controlador del módulo MSP Reports.
+ *
+ * Gestiona el ciclo de vida completo de los reportes mensuales MSP (Managed Service Provider)
+ * de Ovnicom: importación de Excel desde SharePoint, visualización de estadísticas por cliente,
+ * generación de PDFs con Browsershot/Chromium, envío masivo/individual por correo vía SendGrid
+ * y chat de inteligencia artificial con contexto de datos MSP.
+ *
+ * Vistas:
+ *   - admin.reports.msp.index          → Pantalla de subida/importación de Excel
+ *   - admin.reports.msp.clientes       → Listado paginado de clientes con estadísticas
+ *   - admin.reports.msp.cliente_detalle → Detalle individual de un cliente
+ *   - admin.reports.msp.pdf_template   → Plantilla HTML del reporte PDF
+ *   - admin.reports.msp.descarga_masiva → Descarga ZIP con múltiples PDFs
+ *   - admin.reports.msp.correos        → Pantalla de envío de correos
+ *   - admin.reports.msp.chat           → Chat IA sobre datos MSP
+ *
+ * Rutas principales (prefijo /admin/msp-reports):
+ *   GET  /                  → index()
+ *   GET  /clientes          → clientes()
+ *   GET  /clientes/{name}   → clienteDetalle()
+ *   POST /clientes/{name}   → updateCliente()
+ *   GET  /pdf/{name}        → pdfPreview()
+ *   GET  /pdf/{name}/download → pdfDownload()
+ *   GET  /descarga-masiva   → descargaMasivaIndex()
+ *   POST /descarga-masiva   → descargaMasivaZip()
+ *   GET  /correos           → correos()
+ *   POST /correos/enviar    → enviarCorreo()
+ *   POST /correos/masivo    → enviarMasivo()
+ *   GET  /chat              → chat()
+ *   POST /chat/api          → chatApi()
+ *   POST /sharepoint/import → sharepointImport()
+ *   POST /batch/{batch}/refresh → refreshBatch()
+ *
+ * @see \App\Services\MspPdfService   Generación de PDF reutilizable (web + API)
+ * @see \App\Services\SharePointService   Integración con Microsoft SharePoint
+ */
 class MspReportController extends Controller
 {
     // =========================================================================
     // VENTANA 1 — Subir Excel
     // =========================================================================
 
+    /**
+     * Pantalla principal del módulo MSP Reports (importación de Excel).
+     *
+     * En petición AJAX/JSON devuelve la lista de archivos Excel disponibles en SharePoint.
+     * En petición normal renderiza la vista de subida con los últimos 10 lotes importados
+     * y el estado de las credenciales de SharePoint.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\JsonResponse|\Illuminate\View\View
+     */
     public function index(Request $request)
     {
         $sp = app(SharePointService::class);
@@ -52,6 +99,20 @@ class MspReportController extends Controller
     // VENTANA 2 — Ver información de clientes
     // =========================================================================
 
+    /**
+     * Listado paginado de clientes con estadísticas del período seleccionado.
+     *
+     * Combina dos fuentes de datos:
+     *  1. Tabla `msp_clients` → información del cliente (email, logo, RUC).
+     *  2. Tabla `msp_reports` → agregados del período (total tickets, incidentes,
+     *     solicitudes, tiempo promedio de vida del ticket).
+     *
+     * Si se filtra por período, solo muestra los clientes que tienen registros en ese período.
+     * La búsqueda de texto filtra únicamente sobre el nombre del cliente.
+     *
+     * @param  \Illuminate\Http\Request  $request  Parámetros: periodo, search (opcional)
+     * @return \Illuminate\View\View               Vista admin.reports.msp.clientes
+     */
     public function clientes(Request $request)
     {
         $periodos = MspReport::uniquePeriodos();
@@ -96,6 +157,17 @@ class MspReportController extends Controller
         return view('admin.reports.msp.clientes', compact('clientes', 'periodos', 'periodo', 'search'));
     }
 
+    /**
+     * Vista de detalle de un cliente individual con estadísticas del período.
+     *
+     * Adicionalmente intenta resolver el CustomerId del cliente consultando la API
+     * MSP (ver resolveCustomerId). Si el cliente existe en MSP, adjunta los datos
+     * MSP al modelo sin persistirlos (propiedad dinámica `msp_data`).
+     *
+     * @param  \Illuminate\Http\Request  $request   Parámetro opcional: periodo
+     * @param  string                    $customer  Nombre del cliente (URL-encoded)
+     * @return \Illuminate\View\View                Vista admin.reports.msp.cliente_detalle
+     */
     public function clienteDetalle(Request $request, string $customer)
     {
         $customer    = urldecode($customer);
@@ -110,6 +182,24 @@ class MspReportController extends Controller
             compact('customer', 'stats', 'periodos', 'periodo', 'clienteInfo'));
     }
 
+    /**
+     * Resuelve y cachea el CustomerId de un cliente en la API MSP.
+     *
+     * Lógica de resolución:
+     *  - Si ya tiene `customer_id` → consulta directa por ID (más eficiente).
+     *  - Si solo tiene `numero_cuenta` (RUC) → busca por RUC y persiste el CustomerId
+     *    para futuras consultas, evitando búsquedas repetidas.
+     *  - Si no tiene ninguno → devuelve el cliente sin datos MSP.
+     *
+     * Los datos obtenidos de MSP se adjuntan como propiedad dinámica `msp_data`
+     * sin ser guardados en la base de datos.
+     *
+     * Los errores no son fatales: se loguean como warning y el método devuelve
+     * el cliente sin `msp_data` para no romper la vista de detalle.
+     *
+     * @param  \App\Models\MspClient|null  $cliente  Modelo del cliente (puede ser null)
+     * @return \App\Models\MspClient|null            El mismo modelo enriquecido o null
+     */
     protected function resolveCustomerId(?MspClient $cliente): ?MspClient
     {
         if (!$cliente) return null;
@@ -144,6 +234,18 @@ class MspReportController extends Controller
         return $cliente;
     }
 
+    /**
+     * Actualiza la información de un cliente MSP (email, RUC/número de cuenta, logo).
+     *
+     * Usa updateOrCreate para manejar tanto clientes existentes como nuevos.
+     * El logo se almacena en el disco `public` bajo `logos/clientes/` y solo
+     * se actualiza si se adjunta un archivo nuevo; de lo contrario se conserva el existente.
+     * Filtra valores null para no sobreescribir datos previos con vacíos.
+     *
+     * @param  \Illuminate\Http\Request  $request   Campos: email_cliente, numero_cuenta, logo (imagen)
+     * @param  string                    $customer  Nombre del cliente (URL-encoded)
+     * @return \Illuminate\Http\RedirectResponse
+     */
     public function updateCliente(Request $request, string $customer)
     {
         $customer = urldecode($customer);
@@ -175,6 +277,17 @@ class MspReportController extends Controller
     // VENTANA 3 — PDF (individual y descarga masiva)
     // =========================================================================
 
+    /**
+     * Vista previa HTML del reporte PDF de un cliente.
+     *
+     * Renderiza la plantilla PDF directamente en el navegador (sin generar archivo)
+     * para que el usuario pueda revisar el contenido antes de descargar.
+     * El logo del cliente se resuelve como Base64 para que funcione en el PDF offline.
+     *
+     * @param  \Illuminate\Http\Request  $request   Parámetro opcional: periodo
+     * @param  string                    $customer  Nombre del cliente (URL-encoded)
+     * @return \Illuminate\View\View                Vista admin.reports.msp.pdf_template
+     */
     public function pdfPreview(Request $request, string $customer)
     {
         $customer    = urldecode($customer);
@@ -187,6 +300,17 @@ class MspReportController extends Controller
             compact('customer', 'stats', 'periodo', 'logoUrl', 'ovnicomLogo'));
     }
 
+    /**
+     * Genera y descarga el PDF de un cliente (fuerza regeneración sin caché).
+     *
+     * Usa MspPdfService como servicio compartido para la generación real del archivo.
+     * Tras generar el PDF intenta subirlo a SharePoint; si la subida falla, el error
+     * se loguea pero la descarga continúa sin interrumpir al usuario.
+     *
+     * @param  \Illuminate\Http\Request  $request   Parámetro requerido: periodo
+     * @param  string                    $customer  Nombre del cliente (URL-encoded)
+     * @return \Symfony\Component\HttpFoundation\BinaryFileResponse
+     */
     public function pdfDownload(Request $request, string $customer)
     {
         $customer = urldecode($customer);
@@ -205,6 +329,15 @@ class MspReportController extends Controller
         return response()->download($path, $filename);
     }
 
+    /**
+     * Vista de descarga masiva de PDFs.
+     *
+     * Muestra el listado de clientes disponibles para el período seleccionado,
+     * permitiendo seleccionar cuáles incluir en el ZIP.
+     *
+     * @param  \Illuminate\Http\Request  $request  Parámetro opcional: periodo
+     * @return \Illuminate\View\View               Vista admin.reports.msp.descarga_masiva
+     */
     public function descargaMasivaIndex(Request $request)
     {
         $periodos = MspReport::uniquePeriodos();
@@ -221,6 +354,19 @@ class MspReportController extends Controller
         return view('admin.reports.msp.descarga_masiva', compact('periodos', 'periodo', 'clientes'));
     }
 
+    /**
+     * Genera un ZIP con los PDFs de múltiples clientes y lo descarga.
+     *
+     * Comportamiento:
+     *  - Límite de 30 clientes por petición para controlar el tiempo de respuesta.
+     *  - Genera cada PDF individualmente con Browsershot, agrega al ZIP y sube a SharePoint.
+     *  - Los errores por cliente son registrados y acumulados; solo devuelve error total
+     *    si ningún PDF pudo generarse.
+     *  - El ZIP se elimina del servidor tras la descarga (deleteFileAfterSend).
+     *
+     * @param  \Illuminate\Http\Request  $request  Campos: periodo, clientes[] (array de nombres)
+     * @return \Symfony\Component\HttpFoundation\BinaryFileResponse|\Illuminate\Http\RedirectResponse
+     */
     public function descargaMasivaZip(Request $request)
     {
         $request->validate([
@@ -297,6 +443,15 @@ class MspReportController extends Controller
     // VENTANA 4 — Envío de correos (SendGrid)
     // =========================================================================
 
+    /**
+     * Vista de envío de correos con el PDF adjunto.
+     *
+     * Lista los clientes del período seleccionado que tienen tickets importados.
+     * Solo se muestran clientes que efectivamente tienen datos en `msp_reports`.
+     *
+     * @param  \Illuminate\Http\Request  $request  Parámetro opcional: periodo
+     * @return \Illuminate\View\View               Vista admin.reports.msp.correos
+     */
     public function correos(Request $request)
     {
         $periodos = MspReport::uniquePeriodos();
@@ -314,6 +469,17 @@ class MspReportController extends Controller
         return view('admin.reports.msp.correos', compact('clientes', 'periodos', 'periodo'));
     }
 
+    /**
+     * Envía el reporte PDF de un cliente individual por correo electrónico vía SendGrid.
+     *
+     * Delega la lógica de generación del PDF y construcción del payload en sendReportEmail().
+     * Soporta plantillas visuales opcionales (banner HTML) y variables de sustitución
+     * en asunto y cuerpo del mensaje.
+     *
+     * @param  \Illuminate\Http\Request  $request  Campos: customer_name, email, periodo, subject,
+     *                                             mensaje (opcional), plantilla_id (opcional)
+     * @return \Illuminate\Http\RedirectResponse
+     */
     public function enviarCorreo(Request $request)
     {
         $request->validate([
@@ -341,6 +507,20 @@ class MspReportController extends Controller
         return back()->with('error', '❌ Error al enviar: ' . $result['error']);
     }
 
+    /**
+     * Envío masivo de reportes PDF por correo a múltiples clientes en una sola petición.
+     *
+     * Optimización clave: pre-carga todos los modelos MspClient de una sola query
+     * antes del loop para evitar el problema N+1 (una query por cliente).
+     * Los errores son acumulados y reportados en el mensaje de éxito parcial.
+     *
+     * Variables de sustitución disponibles en asunto/mensaje:
+     *  [[cliente]], [[periodo]], [[incidentes]], [[solicitudes]], [[t_inc]], [[t_sol]], [[cuenta]]
+     *
+     * @param  \Illuminate\Http\Request  $request  Campos: periodo, clientes[] (customer_name + email),
+     *                                             subject, mensaje (opcional), plantilla_id (opcional)
+     * @return \Illuminate\Http\RedirectResponse
+     */
     public function enviarMasivo(Request $request)
     {
         $request->validate([
@@ -396,11 +576,34 @@ class MspReportController extends Controller
     // Chat IA
     // =========================================================================
 
+    /**
+     * Vista del chat de inteligencia artificial sobre datos MSP.
+     *
+     * @return \Illuminate\View\View  Vista admin.reports.msp.chat
+     */
     public function chat(Request $request)
     {
         return view('admin.reports.msp.chat');
     }
 
+    /**
+     * Endpoint AJAX del chat IA con contexto de datos MSP.
+     *
+     * Inyecta al LLM (vía Laravel\AI) el contexto del sistema con los períodos
+     * y clientes disponibles. Si el mensaje del usuario menciona el nombre de un
+     * cliente, enriquece el contexto con las estadísticas reales de ese cliente
+     * en el período más reciente.
+     *
+     * Comportamiento especial de acciones estructuradas:
+     * Si el LLM responde con JSON en lugar de texto, se trata como una acción
+     * (ej: {"action":"download_pdf","customer":"NOMBRE","periodo":"PERIODO"})
+     * y se devuelve en el campo `action` de la respuesta JSON para que el frontend
+     * la ejecute directamente.
+     *
+     * @param  \Illuminate\Http\Request  $request  Campos: message (texto del usuario),
+     *                                             history (array de mensajes previos, opcional)
+     * @return \Illuminate\Http\JsonResponse       {response: string, action: array|null}
+     */
     public function chatApi(Request $request)
     {
         $request->validate([
@@ -472,6 +675,20 @@ Para cualquier otra consulta responde en español de forma clara y concisa.";
     // SharePoint
     // =========================================================================
 
+    /**
+     * Importa un archivo Excel de SharePoint a la base de datos local.
+     *
+     * Flujo:
+     *  1. Descarga el archivo desde SharePoint (por item_id si está disponible,
+     *     o por nombre como fallback).
+     *  2. Crea un registro MspUploadBatch para rastrear la importación.
+     *  3. Ejecuta MspReportsImport (Maatwebsite Excel) que procesa cada fila.
+     *  4. Actualiza las métricas del batch (total de registros y clientes únicos).
+     *  5. Elimina el archivo temporal descargado.
+     *
+     * @param  \Illuminate\Http\Request  $request  Campos: filename, periodo, item_id (SharePoint ID, opcional)
+     * @return \Illuminate\Http\RedirectResponse
+     */
     public function sharepointImport(Request $request)
     {
         $request->validate([
@@ -518,8 +735,19 @@ Para cualquier otra consulta responde en español de forma clara y concisa.";
     // =========================================================================
 
     /**
-     * Genera un PDF con Browsershot configurado para funcionar en Docker.
-     * Centraliza rutas de Chrome/Node y flags necesarios para contenedores Linux.
+     * Genera un PDF a partir de HTML usando Browsershot (Chromium headless).
+     *
+     * Configurado específicamente para ejecutarse en contenedores Docker Linux:
+     *  - `noSandbox()` → requerido en entornos sin privilegios (Docker sin --cap-add).
+     *  - `disable-dev-shm-usage` → evita errores de memoria compartida en contenedores pequeños.
+     *  - `disable-gpu` → necesario en servidores sin GPU/X11.
+     *  - Rutas de Chrome/Node configurables vía variables de entorno BROWSERSHOT_*.
+     *  - `waitUntilNetworkIdle()` → asegura que los recursos externos (CSS/fuentes) carguen.
+     *  - Timeout de 120 segundos para PDFs con muchos datos.
+     *
+     * @param  string  $html        HTML completo del reporte a convertir
+     * @param  string  $outputPath  Ruta absoluta donde guardar el PDF generado
+     * @return void
      */
     private function generatePdf(string $html, string $outputPath): void
     {
@@ -544,7 +772,15 @@ Para cualquier otra consulta responde en español de forma clara y concisa.";
     }
 
     /**
-     * Construye un nombre de archivo PDF seguro a partir del nombre del cliente y período.
+     * Construye un nombre de archivo PDF seguro (sin caracteres problemáticos en sistema de archivos).
+     *
+     * Reemplaza espacios, barras, comas y backslashes con guiones para garantizar
+     * compatibilidad en sistemas Windows, Linux y SharePoint.
+     * Formato resultante: MSP-{cliente}-{periodo}.pdf
+     *
+     * @param  string       $customer  Nombre del cliente
+     * @param  string|null  $periodo   Período del reporte (ej: "Enero 2025")
+     * @return string                  Nombre de archivo seguro (ej: "MSP-Empresa-SA-Enero-2025.pdf")
      */
     private function buildPdfFilename(string $customer, ?string $periodo): string
     {
@@ -554,8 +790,28 @@ Para cualquier otra consulta responde en español de forma clara y concisa.";
     }
 
     /**
-     * Envía un reporte por correo vía SendGrid. Método centralizado reutilizable
-     * por envío individual y masivo.
+     * Método centralizado de envío de reporte por correo vía SendGrid API v3.
+     *
+     * Reutilizado tanto para envío individual (enviarCorreo) como masivo (enviarMasivo).
+     * Pasos internos:
+     *  1. Obtiene estadísticas del cliente para el período.
+     *  2. Sustituye variables dinámicas ([[cliente]], [[periodo]], etc.) en asunto y cuerpo.
+     *  3. Si hay plantilla seleccionada, construye el banner HTML con la imagen.
+     *  4. Genera el PDF con Browsershot.
+     *  5. Construye y envía el payload SendGrid con el PDF como adjunto en Base64.
+     *  6. Devuelve array con resultado: ['success' => bool, 'error' => string (si falla)].
+     *
+     * No lanza excepciones — siempre devuelve un array de resultado para que el
+     * caller pueda continuar con los demás clientes en envíos masivos.
+     *
+     * @param  string           $customer      Nombre del cliente
+     * @param  string           $email         Dirección de correo destino
+     * @param  string           $periodo       Período del reporte
+     * @param  string           $subject       Asunto del correo (puede incluir variables)
+     * @param  string           $mensaje       Cuerpo del mensaje (puede incluir variables)
+     * @param  int|null         $plantillaId   ID de MspPlantilla para banner opcional
+     * @param  MspClient|null   $clienteModel  Modelo pre-cargado (evita query en envío masivo)
+     * @return array{success: bool, error?: string}
      */
     private function sendReportEmail(
         string      $customer,
@@ -657,12 +913,32 @@ Para cualquier otra consulta responde en español de forma clara y concisa.";
         }
     }
 
+    /**
+     * Obtiene el logo del cliente como cadena Base64 embebible en HTML/PDF.
+     *
+     * Retorna null si el cliente no tiene logo configurado en base de datos.
+     * El formato devuelto es "data:{mime};base64,{datos}" listo para usar en <img src>.
+     *
+     * @param  string           $customer  Nombre del cliente
+     * @param  string|null      $periodo   Período (no usado actualmente, reservado para futuro)
+     * @param  MspClient|null   $cliente   Modelo pre-cargado (evita una query adicional)
+     * @return string|null                 Data URI del logo o null si no existe
+     */
     private function resolveLogoUrl(string $customer, ?string $periodo, ?MspClient $cliente = null): ?string
     {
         $cliente ??= MspClient::where('customer_name', $customer)->first();
         return $cliente?->getLogoBase64();
     }
 
+    /**
+     * Carga el logo de Ovnicom como Data URI Base64 para embebido en PDF.
+     *
+     * El PDF se genera sin acceso a red (modo offline Chromium), por lo que
+     * las imágenes deben estar embebidas en Base64. Lee el archivo directamente
+     * del sistema de archivos en storage/app/public/logos/ovnicom.png.
+     *
+     * @return string|null  Data URI "data:{mime};base64,{datos}" o null si no existe el archivo
+     */
     private function getOvnicomLogo(): ?string
     {
         $path = storage_path('app/public/logos/ovnicom.png');
@@ -674,6 +950,22 @@ Para cualquier otra consulta responde en español de forma clara y concisa.";
         return "data:{$mime};base64,{$base64}";
     }
     
+    /**
+     * Refresca un lote de importación re-descargando el Excel original de SharePoint.
+     *
+     * Restricciones de seguridad:
+     *  - Solo se permite actualizar lotes creados en los últimos 7 días.
+     *  - Requiere que el batch tenga un sharepoint_item_id registrado.
+     *
+     * Comportamiento destructivo controlado:
+     *  Elimina TODOS los registros del batch antes de re-importar para garantizar
+     *  consistencia. Esto significa que si el Excel fuente cambió, los datos reflejarán
+     *  la versión actual del archivo en SharePoint.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @param  \App\Models\MspUploadBatch  $batch  Lote a refrescar (model binding)
+     * @return \Illuminate\Http\RedirectResponse
+     */
     public function refreshBatch(Request $request, MspUploadBatch $batch)
     {
         // Validar que no hayan pasado más de 7 días

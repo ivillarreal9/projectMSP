@@ -6,11 +6,37 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Exception;
 
+/**
+ * Servicio de integración con la API REST de Cisco Meraki Dashboard.
+ *
+ * Cubre las siguientes áreas funcionales:
+ *   - Organizaciones y redes
+ *   - Dispositivos (inventario, estados online/offline, clientes conectados)
+ *   - Switches (puertos, configuración)
+ *   - Uplinks de appliances MX/MG
+ *   - Wireless SSIDs
+ *   - Eventos y alertas de salud de red
+ *   - Licencias (per-device y co-termination)
+ *   - Caché global de todos los dispositivos (compartida entre usuarios)
+ *
+ * Estrategia de caché:
+ *   - Datos estáticos (inventario, redes, licencias): 24 h – 48 h
+ *   - Datos de estado (online/offline, uplinks, alertas): 2 – 5 min
+ *   - El caché global meraki_all_devices_global es compartido (no por usuario)
+ *     para que una sola recarga de la API beneficie a todos los usuarios activos.
+ *
+ * Dependencias externas:
+ *   - Cisco Meraki API v1  : MERAKI_BASE_URL + MERAKI_API_KEY en .env
+ *   - Cabecera de auth     : X-Cisco-Meraki-API-Key
+ */
 class MerakiService
 {
     protected string $baseUrl;
     protected string $apiKey;
 
+    /**
+     * Inicializa el servicio leyendo la URL base y la API Key desde config/meraki.php.
+     */
     public function __construct()
     {
         $this->baseUrl = rtrim(config('meraki.base_url') ?? '', '/');
@@ -19,6 +45,12 @@ class MerakiService
 
     // ─── Organizations ────────────────────────────────────────────────────────
 
+    /**
+     * Retorna todas las organizaciones Meraki accesibles con la API Key configurada.
+     *
+     * @return array Lista de organizaciones con id, name, url y otros metadatos
+     * @throws Exception si la API Key no está configurada o la API retorna error
+     */
     public function getOrganizations(): array
     {
         return Cache::remember('meraki_organizations', now()->addHours(24), fn () =>
@@ -26,6 +58,13 @@ class MerakiService
         );
     }
 
+    /**
+     * Retorna los datos de una organización específica por su ID.
+     *
+     * @param  string $orgId ID de la organización Meraki
+     * @return array         Datos de la organización (id, name, url, api, licensing, cloud)
+     * @throws Exception     si la API retorna error o la org no existe
+     */
     public function getOrganization(string $orgId): array
     {
         return Cache::remember("meraki_org_{$orgId}", now()->addHours(24), fn () =>
@@ -35,6 +74,13 @@ class MerakiService
 
     // ─── Networks ─────────────────────────────────────────────────────────────
 
+    /**
+     * Lista todas las redes de una organización.
+     *
+     * @param  string $orgId ID de la organización
+     * @return array         Lista de redes con id, name, type, timeZone, etc.
+     * @throws Exception     si la API retorna error
+     */
     public function getNetworks(string $orgId): array
     {
         return Cache::remember("meraki_networks_{$orgId}", now()->addHours(24), fn () =>
@@ -42,6 +88,13 @@ class MerakiService
         );
     }
 
+    /**
+     * Retorna los detalles de una red específica.
+     *
+     * @param  string $networkId ID de la red Meraki
+     * @return array             Detalles de la red (id, name, organizationId, type, etc.)
+     * @throws Exception         si la API retorna error o la red no existe
+     */
     public function getNetwork(string $networkId): array
     {
         return Cache::remember("meraki_network_{$networkId}", now()->addHours(24), fn () =>
@@ -51,7 +104,13 @@ class MerakiService
 
     // ─── Devices ──────────────────────────────────────────────────────────────
 
-    /** All devices in an organization. */
+    /**
+     * Retorna todos los dispositivos del inventario de una organización.
+     *
+     * @param  string $orgId ID de la organización
+     * @return array         Lista de dispositivos con serial, model, name, networkId, etc.
+     * @throws Exception     si la API retorna error
+     */
     public function getDevices(string $orgId): array
     {
         return Cache::remember("meraki_devices_{$orgId}", now()->addHours(24), fn () =>
@@ -59,7 +118,15 @@ class MerakiService
         );
     }
 
-    /** Per-device online/offline/alerting status for the whole org. */
+    /**
+     * Retorna el estado online/offline/alerting de cada dispositivo de la organización.
+     *
+     * TTL corto (5 min) porque los estados cambian frecuentemente.
+     *
+     * @param  string $orgId ID de la organización
+     * @return array         Lista de estados con serial, status, lastReportedAt, etc.
+     * @throws Exception     si la API retorna error
+     */
     public function getDeviceStatuses(string $orgId): array
     {
         return Cache::remember("meraki_device_statuses_{$orgId}", now()->addMinutes(5), fn () =>
@@ -67,7 +134,16 @@ class MerakiService
         );
     }
 
-    /** Aggregated online/offline/alerting count — cheap summary call. */
+    /**
+     * Retorna el conteo agregado de dispositivos por estado (online/offline/alerting).
+     *
+     * Más barato que getDeviceStatuses() — útil para mostrar totales en el dashboard
+     * sin necesidad de iterar sobre todos los dispositivos en PHP.
+     *
+     * @param  string $orgId ID de la organización
+     * @return array         Totales: {'counts': {'online': N, 'offline': N, 'alerting': N}}
+     * @throws Exception     si la API retorna error
+     */
     public function getDeviceStatusesOverview(string $orgId): array
     {
         return Cache::remember("meraki_device_statuses_overview_{$orgId}", now()->addMinutes(5), fn () =>
@@ -75,7 +151,13 @@ class MerakiService
         );
     }
 
-    /** Devices belonging to a specific network. */
+    /**
+     * Lista los dispositivos físicamente asociados a una red específica.
+     *
+     * @param  string $networkId ID de la red Meraki
+     * @return array             Lista de dispositivos de la red
+     * @throws Exception         si la API retorna error
+     */
     public function getNetworkDevices(string $networkId): array
     {
         return Cache::remember("meraki_network_devices_{$networkId}", now()->addHours(24), fn () =>
@@ -83,7 +165,14 @@ class MerakiService
         );
     }
 
-    /** Clients connected to a specific device. Timespan in seconds (default 24 h). */
+    /**
+     * Lista los clientes conectados a un dispositivo específico en el período dado.
+     *
+     * @param  string $serial   Número de serie del dispositivo Meraki
+     * @param  int    $timespan Ventana temporal en segundos (default 86400 = 24 h)
+     * @return array            Lista de clientes con mac, ip, description, usage, etc.
+     * @throws Exception        si la API retorna error
+     */
     public function getDeviceClients(string $serial, int $timespan = 86400): array
     {
         return Cache::remember("meraki_device_clients_{$serial}_{$timespan}", now()->addMinutes(3), fn () =>
@@ -91,7 +180,16 @@ class MerakiService
         );
     }
 
-    /** Per-port status for a switch. */
+    /**
+     * Retorna el estado de cada puerto de un switch Meraki en el período dado.
+     *
+     * TTL corto (2 min) porque los estados de puerto cambian con cada conexión/desconexión.
+     *
+     * @param  string $serial   Número de serie del switch
+     * @param  int    $timespan Ventana temporal en segundos (default 86400 = 24 h)
+     * @return array            Lista de estados de puerto con portId, enabled, status, etc.
+     * @throws Exception        si la API retorna error
+     */
     public function getSwitchPortStatuses(string $serial, int $timespan = 86400): array
     {
         return Cache::remember("meraki_switch_port_statuses_{$serial}", now()->addMinutes(2), fn () =>
@@ -99,7 +197,15 @@ class MerakiService
         );
     }
 
-    /** Port configuration list for a switch. */
+    /**
+     * Retorna la configuración de todos los puertos de un switch.
+     *
+     * Datos estáticos (VLAN, nombre, tipo) — TTL largo de 24 h.
+     *
+     * @param  string $serial Número de serie del switch
+     * @return array          Lista de configuraciones de puerto con portId, name, vlan, type, etc.
+     * @throws Exception      si la API retorna error
+     */
     public function getSwitchPorts(string $serial): array
     {
         return Cache::remember("meraki_switch_ports_{$serial}", now()->addHours(24), fn () =>
@@ -109,7 +215,16 @@ class MerakiService
 
     // ─── Uplinks ──────────────────────────────────────────────────────────────
 
-    /** Org-wide uplink status (MX & MG appliances). */
+    /**
+     * Retorna el estado de los uplinks WAN de los appliances MX y MG de la organización.
+     *
+     * Incluye estado de cada interface (active/ready/failed), IP, gateway y proveedor.
+     * TTL corto (5 min) porque refleja conectividad WAN en tiempo casi real.
+     *
+     * @param  string $orgId ID de la organización
+     * @return array         Lista de uplinks por dispositivo con serial, networkId, uplinks[]
+     * @throws Exception     si la API retorna error
+     */
     public function getUplinkStatuses(string $orgId): array
     {
         return Cache::remember("meraki_uplink_statuses_{$orgId}", now()->addMinutes(5), fn () =>
@@ -119,7 +234,17 @@ class MerakiService
 
     // ─── Clients ──────────────────────────────────────────────────────────────
 
-    /** All clients seen in a network during the given timespan (default 24 h). */
+    /**
+     * Lista todos los clientes vistos en una red durante el período indicado.
+     *
+     * Se solicitan hasta 1 000 clientes por página (perPage=1000). Si la red
+     * tiene más clientes activos, se devolverán solo los primeros 1 000.
+     *
+     * @param  string $networkId ID de la red
+     * @param  int    $timespan  Ventana en segundos (default 86400 = 24 h)
+     * @return array             Lista de clientes con mac, ip, description, usage, etc.
+     * @throws Exception         si la API retorna error
+     */
     public function getNetworkClients(string $networkId, int $timespan = 86400): array
     {
         return Cache::remember("meraki_network_clients_{$networkId}_{$timespan}", now()->addMinutes(3), fn () =>
@@ -127,7 +252,15 @@ class MerakiService
         );
     }
 
-    /** Aggregate client count / usage overview for a network. */
+    /**
+     * Retorna el resumen agregado de clientes de una red (totales y uso).
+     *
+     * Más eficiente que getNetworkClients() para mostrar solo el conteo de clientes.
+     *
+     * @param  string $networkId ID de la red
+     * @return array             Totales: counts (online, offline) + usage (sent, recv)
+     * @throws Exception         si la API retorna error
+     */
     public function getNetworkClientsOverview(string $networkId): array
     {
         return Cache::remember("meraki_network_clients_overview_{$networkId}", now()->addMinutes(3), fn () =>
@@ -137,7 +270,16 @@ class MerakiService
 
     // ─── Wireless ─────────────────────────────────────────────────────────────
 
-    /** SSIDs configured on a wireless network. */
+    /**
+     * Lista los SSIDs configurados en una red inalámbrica Meraki.
+     *
+     * Meraki siempre devuelve 15 SSIDs (habilitados y deshabilitados).
+     * La vista filtra los que tienen enabled=true para mostrar solo los activos.
+     *
+     * @param  string $networkId ID de la red inalámbrica
+     * @return array             Lista de 15 SSIDs con number, name, enabled, authMode, etc.
+     * @throws Exception         si la API retorna error
+     */
     public function getWirelessSsids(string $networkId): array
     {
         return Cache::remember("meraki_wireless_ssids_{$networkId}", now()->addHours(24), fn () =>
@@ -147,7 +289,14 @@ class MerakiService
 
     // ─── Events & Alerts ──────────────────────────────────────────────────────
 
-    /** Recent events for a network. */
+    /**
+     * Retorna los eventos recientes de una red (conexiones, desconexiones, errores, etc.).
+     *
+     * @param  string $networkId ID de la red
+     * @param  int    $perPage   Número de eventos a retornar (default 50)
+     * @return array             Estructura con events[] y pageStartAt
+     * @throws Exception         si la API retorna error
+     */
     public function getNetworkEvents(string $networkId, int $perPage = 50): array
     {
         return Cache::remember("meraki_network_events_{$networkId}_{$perPage}", now()->addMinutes(5), fn () =>
@@ -155,7 +304,16 @@ class MerakiService
         );
     }
 
-    /** Active health alerts for a network. */
+    /**
+     * Retorna las alertas de salud activas de una red.
+     *
+     * Las alertas incluyen dispositivos con alta latencia, pérdida de paquetes,
+     * interfaces degradadas, etc. TTL corto (5 min) para mantener relevancia.
+     *
+     * @param  string $networkId ID de la red
+     * @return array             Lista de alertas con type, severity, scope, etc.
+     * @throws Exception         si la API retorna error
+     */
     public function getNetworkHealthAlerts(string $networkId): array
     {
         return Cache::remember("meraki_health_alerts_{$networkId}", now()->addMinutes(5), fn () =>
@@ -165,7 +323,16 @@ class MerakiService
 
     // ─── Licensing ────────────────────────────────────────────────────────────
 
-    /** Summary: status, expiration date, licensed device counts per product. */
+    /**
+     * Retorna el resumen de licenciamiento de la organización.
+     *
+     * Incluye estado (OK/License Required), fecha de expiración y conteos por producto.
+     * TTL largo (48 h) porque las licencias cambian raramente.
+     *
+     * @param  string $orgId ID de la organización
+     * @return array         Resumen con status, expirationDate, licensedDeviceCounts, etc.
+     * @throws Exception     si la API retorna error
+     */
     public function getLicensesOverview(string $orgId): array
     {
         return Cache::remember("meraki_licenses_overview_{$orgId}", now()->addHours(48), fn () =>
@@ -174,8 +341,16 @@ class MerakiService
     }
 
     /**
-     * Full license list for an organization.
-     * Devuelve [] si la org usa co-termination (no per-device licensing).
+     * Retorna la lista completa de licencias per-device de una organización.
+     *
+     * Las organizaciones con modelo co-termination no tienen licencias individuales —
+     * la API retorna HTTP 400. En ese caso se captura la excepción, se registra
+     * en el log como info (no error) y se devuelve [] para no bloquear el flujo.
+     *
+     * @param  string $orgId ID de la organización
+     * @return array         Lista de licencias con licenseType, licenseKey, deviceSerial, etc.
+     *                       Puede ser [] si la org usa co-termination licensing.
+     * @throws Exception     si el error de la API NO es por co-termination
      */
     public function getLicenses(string $orgId): array
     {
@@ -196,8 +371,15 @@ class MerakiService
     // ─── Aggregated (all orgs) ────────────────────────────────────────────────
 
     /**
-     * All devices from all organizations with status attached.
-     * Shared cache across all users — one API call benefits everyone.
+     * Retorna todos los dispositivos de todas las organizaciones con su estado adjunto.
+     *
+     * Combina getDevices() + getDeviceStatuses() por organización y agrega a cada
+     * dispositivo las claves _status, _orgName y _orgId para facilitar la vista.
+     * El caché global (meraki_all_devices_global) es compartido entre todos los usuarios
+     * — si un usuario refresca, todos se benefician del dato actualizado.
+     * Los errores por org se logean como warnings y no detienen el proceso.
+     *
+     * @return array Lista completa de dispositivos de todas las orgs con estado incrustado
      */
     public function getAllDevicesWithStatuses(): array
     {
@@ -227,6 +409,14 @@ class MerakiService
         });
     }
 
+    /**
+     * Invalida el caché global de todos los dispositivos.
+     *
+     * Fuerza que la próxima llamada a getAllDevicesWithStatuses() vuelva a consultar
+     * la API. Útil después de cambios en el inventario de dispositivos.
+     *
+     * @return void
+     */
     public function flushAllDevicesCache(): void
     {
         Cache::forget('meraki_all_devices_global');
@@ -234,6 +424,16 @@ class MerakiService
 
     // ─── Cache helpers ────────────────────────────────────────────────────────
 
+    /**
+     * Pre-carga en caché todos los datos de todas las organizaciones.
+     *
+     * Diseñado para ejecutarse via el comando artisan meraki:warm-cache cada 30 minutos
+     * (configurado en el scheduler de routes/console.php). Al finalizar, invalida y
+     * regenera también el caché global combinado de dispositivos.
+     * Los errores por organización se logean como warnings y no detienen el warm-up.
+     *
+     * @return void
+     */
     public function warmCache(): void
     {
         $organizations = $this->getOrganizations();
@@ -252,6 +452,15 @@ class MerakiService
         $this->getAllDevicesWithStatuses();
     }
 
+    /**
+     * Invalida todas las entradas de caché relacionadas con una organización específica.
+     *
+     * Usado por el botón "Refrescar organización" en la UI para forzar datos frescos
+     * sin invalidar el caché de las demás organizaciones.
+     *
+     * @param  string $orgId ID de la organización a invalidar
+     * @return void
+     */
     public function flushOrgCache(string $orgId): void
     {
         Cache::forget("meraki_org_{$orgId}");
@@ -262,6 +471,15 @@ class MerakiService
         Cache::forget("meraki_uplink_statuses_{$orgId}");
     }
 
+    /**
+     * Invalida todas las entradas de caché relacionadas con una red específica.
+     *
+     * Invalida con los parámetros por defecto usados en cada método (timespan 86400,
+     * perPage 50) para asegurar que las claves generadas coincidan exactamente.
+     *
+     * @param  string $networkId ID de la red a invalidar
+     * @return void
+     */
     public function flushNetworkCache(string $networkId): void
     {
         Cache::forget("meraki_network_{$networkId}");
@@ -275,6 +493,18 @@ class MerakiService
 
     // ─── HTTP ─────────────────────────────────────────────────────────────────
 
+    /**
+     * Ejecuta una petición GET autenticada a la API de Cisco Meraki.
+     *
+     * La autenticación usa la cabecera X-Cisco-Meraki-API-Key (no Bearer).
+     * Retorna el JSON completo parseado — la estructura varía por endpoint
+     * (algunos devuelven array, otros objeto raíz).
+     *
+     * @param  string $path Ruta relativa al baseUrl (p.ej. '/organizations')
+     * @return array        JSON de la respuesta parseado como array
+     * @throws Exception    si la API Key no está configurada
+     * @throws Exception    si la API retorna cualquier estado HTTP de error
+     */
     protected function get(string $path): array
     {
         if (empty($this->apiKey)) {

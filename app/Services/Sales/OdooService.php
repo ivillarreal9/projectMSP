@@ -5,6 +5,25 @@ namespace App\Services\Sales;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Cache;
 
+/**
+ * Servicio de integración con Odoo via JSON-RPC (protocolo nativo de Odoo).
+ *
+ * Provee acceso a los modelos CRM, Ventas y Socios para el módulo de Ventas:
+ *   - KPIs globales del dashboard (leads, oportunidades, pipeline, clientes en riesgo)
+ *   - Pipeline de órdenes de venta (cotizaciones y pedidos)
+ *   - Clientes y clientes para reasignación (sin factura reciente)
+ *   - Ejecutivas de venta y sus métricas individuales
+ *   - Comisiones (via CommissionService que depende de este servicio)
+ *   - Sincronización de partners para el módulo de merge de clientes
+ *
+ * Protocolo: JSON-RPC 2.0 sobre HTTP POST al endpoint /web/dataset/call_kw de Odoo.
+ * Autenticación: login con API Key → UID → execute_kw con (db, uid, api_key, model, method).
+ * El UID se cachea 4 minutos y se renueva automáticamente si una llamada falla.
+ *
+ * Dependencias externas:
+ *   - Odoo : ODOO_URL, ODOO_DB, ODOO_USERNAME, ODOO_API_KEY en .env
+ *   - config/sales.php : executive_ids (lista de IDs de usuarios ejecutivos)
+ */
 class OdooService
 {
     private string $url;
@@ -12,12 +31,22 @@ class OdooService
     private string $username;
     private string $apiKey;
 
-    const CACHE_KPI        = 86400;   // 24 horas
-    const CACHE_EXECUTIVES = 86400;   // 24 horas
-    const CACHE_CLIENTS    = 86400;   // 24 horas
-    const CACHE_PIPELINE   = 86400;   // 24 horas
-    const CACHE_MONTH      = 2592000; // 30 días
+    /** TTL de caché para KPIs y métricas: 24 horas. */
+    const CACHE_KPI        = 86400;
+    /** TTL de caché para lista de ejecutivas: 24 horas. */
+    const CACHE_EXECUTIVES = 86400;
+    /** TTL de caché para datos de clientes: 24 horas. */
+    const CACHE_CLIENTS    = 86400;
+    /** TTL de caché para el pipeline de ventas: 24 horas. */
+    const CACHE_PIPELINE   = 86400;
+    /** TTL de caché para sincronización de partners: 30 días. */
+    const CACHE_MONTH      = 2592000;
 
+    /**
+     * Inicializa el servicio leyendo la configuración de Odoo.
+     *
+     * @throws \RuntimeException si cualquiera de las 4 variables de Odoo no está configurada
+     */
     public function __construct()
     {
         $this->url      = config('services.odoo.url')      ?? throw new \RuntimeException('ODOO_URL no está configurado.');
@@ -28,6 +57,18 @@ class OdooService
 
     // ── Transporte ────────────────────────────────────────────
 
+    /**
+     * Ejecuta una llamada JSON-RPC al servidor Odoo.
+     *
+     * Envuelve el request en el formato {"jsonrpc":"2.0","method":"call","params":{...}}
+     * requerido por Odoo. Retorna null si la HTTP request falla o si la respuesta
+     * contiene un campo 'error' (error de negocio de Odoo).
+     *
+     * @param  string $service Servicio Odoo: 'common' (autenticación) o 'object' (datos)
+     * @param  string $method  Método del servicio: 'login' o 'execute_kw'
+     * @param  array  $args    Argumentos posicionales para el método
+     * @return mixed           Valor del campo 'result' de la respuesta, o null si hay error
+     */
     private function call(string $service, string $method, array $args): mixed
     {
         $response = Http::timeout(30)->post($this->url, [
@@ -47,6 +88,14 @@ class OdooService
         return $json['result'] ?? null;
     }
 
+    /**
+     * Autentica en Odoo y retorna el UID del usuario.
+     *
+     * El UID se cachea 4 minutos — suficiente para una sesión de trabajo normal
+     * sin llamadas de login repetidas en cada request de la aplicación.
+     *
+     * @return int|null UID del usuario autenticado, o null si las credenciales fallan
+     */
     public function login(): ?int
     {
         return Cache::remember('odoo:session:uid', 240, fn() =>
@@ -56,6 +105,19 @@ class OdooService
         );
     }
 
+    /**
+     * Ejecuta una operación sobre un modelo Odoo vía execute_kw.
+     *
+     * Si el UID cacheado ya expiró en Odoo (result == null), invalida la caché,
+     * obtiene un UID fresco y reintenta exactamente una vez para recuperarse
+     * de sesiones vencidas sin intervención del usuario.
+     *
+     * @param  string $model   Modelo Odoo (p.ej. 'crm.lead', 'sale.order', 'res.partner')
+     * @param  string $method  Método del modelo: 'search_read', 'search_count', 'write', etc.
+     * @param  array  $args    Argumentos posicionales (normalmente [domain])
+     * @param  array  $kwargs  Argumentos por nombre (fields, limit, offset, order, etc.)
+     * @return mixed           Resultado de Odoo (array, int o bool) o null si falla
+     */
     public function execute(string $model, string $method, array $args = [], array $kwargs = []): mixed
     {
         $uid = $this->login();
@@ -84,6 +146,19 @@ class OdooService
 
     // ── KPIs ──────────────────────────────────────────────────
 
+    /**
+     * Obtiene los KPIs globales para el dashboard de ventas.
+     *
+     * Ejecuta múltiples llamadas a Odoo para calcular:
+     *   - leads: leads activos en CRM
+     *   - opportunities: oportunidades activas
+     *   - quotations: cotizaciones en estado draft o sent
+     *   - won: oportunidades ganadas
+     *   - atRisk: clientes empresa sin factura en los últimos 60 días
+     *   - pipelineTotal: monto total de cotizaciones activas
+     *
+     * @return array Mapa con claves: leads, opportunities, quotations, won, atRisk, pipelineTotal
+     */
     public function getKpis(): array
     {
         return Cache::remember('odoo:kpis', self::CACHE_KPI, function () {
@@ -120,6 +195,15 @@ class OdooService
 
     // ── Pipeline ──────────────────────────────────────────────
 
+    /**
+     * Obtiene el pipeline de órdenes de venta (cotizaciones) con filtros opcionales.
+     *
+     * @param  string $userId   ID de ejecutiva para filtrar (vacío = todos)
+     * @param  string $state    Estado de la orden ('draft'|'sent'|'' para ambos)
+     * @param  int    $limit    Registros por página (0 = sin límite)
+     * @param  int    $offset   Desplazamiento para paginación
+     * @return array            Lista de órdenes con name, partner_id, user_id, amount_total, state, etc.
+     */
     public function getPipeline(string $userId = '', string $state = '', int $limit = 50, int $offset = 0): array
     {
         $cacheKey = "odoo:pipeline:{$userId}:{$state}:{$limit}:{$offset}";
@@ -142,6 +226,15 @@ class OdooService
         });
     }
 
+    /**
+     * Cuenta el total de órdenes en el pipeline con los filtros dados.
+     *
+     * Usado para construir la paginación del listado de pipeline.
+     *
+     * @param  string $userId ID de ejecutiva para filtrar (vacío = todos)
+     * @param  string $state  Estado de la orden (vacío = draft y sent)
+     * @return int            Total de registros que coinciden con el filtro
+     */
     public function countPipeline(string $userId = '', string $state = ''): int
     {
         $cacheKey = "odoo:pipeline:count:{$userId}:{$state}";
@@ -154,6 +247,14 @@ class OdooService
         });
     }
 
+    /**
+     * Obtiene el pipeline completo con solo state y amount_total para el gráfico.
+     *
+     * Versión ligera sin paginación ni campos innecesarios — optimizada para
+     * alimentar el gráfico de distribución de pipeline por estado.
+     *
+     * @return array Lista de órdenes con solo state y amount_total
+     */
     public function getPipelineForChart(): array
     {
         return Cache::remember('odoo:pipeline:chart', self::CACHE_PIPELINE, function () {
@@ -166,6 +267,15 @@ class OdooService
 
     // ── Clientes — account.move ───────────────────────────────
 
+    /**
+     * Retorna los IDs de partners que tienen al menos una factura publicada desde la fecha dada.
+     *
+     * Usado para identificar clientes "activos" (con compras recientes) y excluirlos
+     * del cálculo de clientes "en riesgo" en los KPIs.
+     *
+     * @param  string $since Fecha de corte en formato 'Y-m-d' (p.ej. '2024-01-01')
+     * @return array         Lista de partner IDs (int) con facturas desde $since
+     */
     public function getPartnerIdsWithInvoiceSince(string $since): array
     {
         $cacheKey = "odoo:invoice:partners:{$since}";
@@ -189,6 +299,16 @@ class OdooService
         });
     }
 
+    /**
+     * Retorna la fecha de la última factura por partner ID.
+     *
+     * Obtiene todas las facturas de los partners dados y construye un mapa
+     * con la fecha más reciente por partner. Se usa en la vista de clientes
+     * para mostrar cuándo fue la última compra de cada cliente.
+     *
+     * @param  array $partnerIds Lista de partner IDs (int)
+     * @return array             Mapa [partnerId => 'Y-m-d'] con la fecha de última factura
+     */
     public function getLastInvoiceDateByPartners(array $partnerIds): array
     {
         if (empty($partnerIds)) return [];
@@ -223,6 +343,15 @@ class OdooService
         });
     }
 
+    /**
+     * Retorna todos los IDs de clientes empresa, opcionalmente filtrados por ejecutiva.
+     *
+     * Optimizado para paginación: obtiene solo los IDs primero, luego los detalles
+     * por página para no cargar todos los campos de todos los clientes de una vez.
+     *
+     * @param  string|null $ejecutivaId ID de usuario ejecutiva para filtrar (null o '' = todos)
+     * @return array                    Lista de IDs de partners (int)
+     */
     public function getAllClientIds(?string $ejecutivaId = ''): array
     {
         $ejecutivaId = $ejecutivaId ?? '';
@@ -246,6 +375,14 @@ class OdooService
         });
     }
 
+    /**
+     * Retorna una página de clientes empresa con nombre y ejecutiva asignada.
+     *
+     * @param  string|null $ejecutivaId ID de ejecutiva para filtrar (null o '' = todos)
+     * @param  int         $limit       Registros por página
+     * @param  int         $offset      Desplazamiento para paginación
+     * @return array                    Lista de partners con name, user_id, customer_rank
+     */
     public function getClientsPaginated(?string $ejecutivaId = '', int $limit = 50, int $offset = 0): array
     {
         $ejecutivaId = $ejecutivaId ?? '';
@@ -272,6 +409,12 @@ class OdooService
         });
     }
 
+    /**
+     * Cuenta los clientes empresa, opcionalmente filtrados por ejecutiva.
+     *
+     * @param  string|null $ejecutivaId ID de ejecutiva para filtrar (null o '' = todos)
+     * @return int                      Total de clientes que coinciden con el filtro
+     */
     public function countClients(?string $ejecutivaId = ''): int
     {
         $ejecutivaId = $ejecutivaId ?? '';
@@ -291,6 +434,16 @@ class OdooService
 
     // ── Clientes para reasignación ────────────────────────────
 
+    /**
+     * Cuenta los clientes inactivos (sin factura en el período) candidatos a reasignación.
+     *
+     * Un cliente es candidato si es empresa, tiene ejecutiva asignada, y NO tiene
+     * facturas publicadas en los últimos $days días.
+     *
+     * @param  int         $days        Días de inactividad para considerar reasignación (default 60)
+     * @param  string|null $ejecutivaId ID de ejecutiva para filtrar (null o '' = todos)
+     * @return int                      Total de clientes inactivos candidatos
+     */
     public function countClientsForReassign(int $days = 60, ?string $ejecutivaId = ''): int
     {
         $ejecutivaId = $ejecutivaId ?? '';
@@ -316,6 +469,15 @@ class OdooService
         });
     }
 
+    /**
+     * Retorna una página de clientes inactivos candidatos a reasignación de ejecutiva.
+     *
+     * @param  int         $days        Días de inactividad para considerar reasignación (default 60)
+     * @param  string|null $ejecutivaId ID de ejecutiva para filtrar (null o '' = todos)
+     * @param  int         $limit       Registros por página
+     * @param  int         $offset      Desplazamiento para paginación
+     * @return array                    Lista de partners con name, user_id, customer_rank
+     */
     public function getClientsForReassignPaginated(
         int     $days        = 60,
         ?string $ejecutivaId = '',
@@ -353,6 +515,16 @@ class OdooService
         });
     }
 
+    /**
+     * Retorna la primera página (50 registros) de clientes candidatos a reasignación.
+     *
+     * Método de conveniencia que envuelve getClientsForReassignPaginated() con los
+     * valores por defecto. Útil para exportaciones y vistas sin paginación explícita.
+     *
+     * @param  int         $days        Días de inactividad (default 60)
+     * @param  string|null $ejecutivaId ID de ejecutiva para filtrar (null o '' = todos)
+     * @return array                    Primera página de clientes candidatos
+     */
     public function getClientsForReassign(int $days = 60, ?string $ejecutivaId = ''): array
     {
         return $this->getClientsForReassignPaginated($days, $ejecutivaId, 50, 0);
@@ -360,6 +532,14 @@ class OdooService
 
     // ── Ejecutivas ────────────────────────────────────────────
 
+    /**
+     * Retorna el listado de ejecutivas de venta configuradas en sales.executive_ids.
+     *
+     * Los IDs de ejecutivas se configuran en config/sales.php para independizarlos
+     * del código. Incluye imagen (image_128) para mostrar avatares en la UI.
+     *
+     * @return array Lista de usuarios ejecutivos con id, name, email, phone, image_128, etc.
+     */
     public function getExecutives(): array
     {
         return Cache::remember('odoo:executives', self::CACHE_EXECUTIVES, function () {
@@ -377,6 +557,18 @@ class OdooService
         });
     }
 
+    /**
+     * Obtiene las métricas individuales de una ejecutiva para el período dado.
+     *
+     * Ejecuta 4 llamadas a Odoo para: leads creados, oportunidades ganadas,
+     * cotizaciones en pipeline, y clientes sin actividad programada.
+     * La clave de caché incluye las fechas para que cada período tenga su propia entrada.
+     *
+     * @param  int         $userId   ID del usuario ejecutiva en Odoo
+     * @param  string|null $dateFrom Fecha de inicio (null = sin filtro de fecha)
+     * @param  string|null $dateTo   Fecha de fin (null = sin filtro de fecha)
+     * @return array                 Mapa: leads, won, pipeline, noContact
+     */
     public function getMetricsByExecutive(int $userId, ?string $dateFrom = null, ?string $dateTo = null): array
     {
         // La clave incluye las fechas para que cada período tenga su propio caché
@@ -416,6 +608,19 @@ class OdooService
 
     // ── Métricas bulk (1 call por métrica para todos los ejecutivos) ──
 
+    /**
+     * Obtiene las métricas de todas las ejecutivas en 4 llamadas a Odoo (en lugar de N*4).
+     *
+     * Optimización clave: en lugar de llamar getMetricsByExecutive() por cada ejecutiva
+     * (que generaría 4*N llamadas a Odoo), hace 4 llamadas bulk con 'user_id in [...]'
+     * y agrupa los resultados en PHP con groupBy. El resultado se cachea por el md5 de
+     * todos los IDs + fechas para invalidar cuando cambia el conjunto de ejecutivas.
+     *
+     * @param  array       $userIds  Lista de IDs de usuarios ejecutivos
+     * @param  string|null $dateFrom Fecha de inicio del período (null = sin filtro)
+     * @param  string|null $dateTo   Fecha de fin del período (null = sin filtro)
+     * @return array                 Mapa [userId => ['leads' => N, 'won' => N, 'pipeline' => N, 'noContact' => N]]
+     */
     public function getMetricsForAllExecutives(array $userIds, ?string $dateFrom = null, ?string $dateTo = null): array
     {
         if (empty($userIds)) return [];
@@ -475,6 +680,14 @@ class OdooService
 
     // ── Detalle ejecutiva — oportunidades CRM ─────────────────
 
+    /**
+     * Obtiene las oportunidades CRM activas de una ejecutiva, ordenadas por probabilidad.
+     *
+     * @param  int $userId ID de la ejecutiva en Odoo
+     * @param  int $limit  Número máximo de oportunidades a retornar (default 20)
+     * @return array       Lista de oportunidades con name, partner_id, stage_id,
+     *                     expected_revenue, probability, date_deadline
+     */
     public function getOpportunitiesByExecutive(int $userId, int $limit = 20): array
     {
         $cacheKey = "odoo:opportunities:exec:{$userId}";
@@ -504,6 +717,16 @@ class OdooService
 
     // ── Detalle ejecutiva — actividades recientes ─────────────
 
+    /**
+     * Obtiene las actividades recientes programadas para una ejecutiva.
+     *
+     * Normaliza activity_type_id (que Odoo retorna como [id, nombre]) al campo
+     * activity_type (string) para facilitar el acceso en la vista Blade.
+     *
+     * @param  int $userId ID de la ejecutiva en Odoo
+     * @param  int $limit  Número máximo de actividades (default 15)
+     * @return array       Lista de actividades con summary, activity_type, date_deadline, res_name
+     */
     public function getActivitiesByExecutive(int $userId, int $limit = 15): array
     {
         $cacheKey = "odoo:activities:exec:{$userId}";
@@ -537,6 +760,17 @@ class OdooService
     }
 
     // ── Sync: todos los partners empresa con nombre y número de cuenta ──
+
+    /**
+     * Obtiene todos los partners empresa para el proceso de sincronización de clientes.
+     *
+     * Excluye residenciales y partners cancelados para el módulo de merge de clientes
+     * MSP ↔ Odoo. Usa TTL de 30 días porque esta sincronización es poco frecuente.
+     * Los campos x_studio_tipo_de_cliente y partner_state son campos personalizados
+     * de la instancia Odoo de Ovnicom.
+     *
+     * @return array Lista de partners con id, complete_name, account_no ordenados por nombre
+     */
     public function fetchAllPartnersForSync(): array
     {
         return Cache::remember('odoo:sync:partners', self::CACHE_MONTH, function () {
@@ -552,6 +786,16 @@ class OdooService
     }
 
     // ── Invalidar caché ───────────────────────────────────────
+
+    /**
+     * Invalida las entradas de caché principales del dashboard de ventas.
+     *
+     * Útil para el botón "Refrescar datos" en la UI. No invalida el caché de
+     * clientes paginados ni el de metrics por ejecutiva (tienen sus propias claves
+     * parametrizadas que no se pueden borrar sin iterar todas las combinaciones).
+     *
+     * @return void
+     */
     public function clearCache(): void
     {
         

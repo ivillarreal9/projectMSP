@@ -4,20 +4,52 @@ namespace App\Services\Sales;
 
 use Illuminate\Support\Facades\Cache;
 
+/**
+ * Servicio de cálculo de comisiones de vendedores sobre órdenes de venta en Odoo.
+ *
+ * Las comisiones se calculan sobre el campo cargo.order asociado a las órdenes de venta,
+ * separadas en dos tipos:
+ *   - OTF (One-Time Fee): cargo único por implementación o instalación
+ *   - MRC (Monthly Recurring Charge): cargo mensual recurrente
+ *
+ * Las órdenes elegibles son las que tienen to_invoice_button_clicked=true y state != cancel.
+ * La asignación de período (mes/año) se toma de los campos year_comission y month_comission
+ * de la orden de venta (campos personalizados de la instancia Odoo de Ovnicom).
+ *
+ * Dependencias externas:
+ *   - OdooService: ejecuta las llamadas JSON-RPC a Odoo
+ *   - Modelo cargo.order de Odoo (personalizado): charge_type in [2,4,8] y cargo_type in [otf, mrc]
+ */
 class CommissionService
 {
-    const CACHE_TTL = 172800; // 48 horas
+    /** TTL de caché para comisiones: 48 horas (datos de períodos cerrados cambian raramente). */
+    const CACHE_TTL = 172800;
 
+    /** Mapa de número de mes a nombre en español. */
     const MONTH_LABELS = [
         1 => 'Enero',    2 => 'Febrero',   3 => 'Marzo',     4 => 'Abril',
         5 => 'Mayo',     6 => 'Junio',     7 => 'Julio',     8 => 'Agosto',
         9 => 'Septiembre', 10 => 'Octubre', 11 => 'Noviembre', 12 => 'Diciembre',
     ];
 
+    /**
+     * @param  OdooService $odoo Inyectado automáticamente por el contenedor de Laravel
+     */
     public function __construct(private OdooService $odoo) {}
 
     // ── Cargos (OTF + MRC) ────────────────────────────────────
 
+    /**
+     * Obtiene los cargos OTF y MRC para un conjunto de órdenes de venta.
+     *
+     * Filtra por charge_type in [2,4,8] que corresponden a los tipos de cargo
+     * comisionables según la configuración de Odoo de Ovnicom.
+     * Los estados 'new' y 'anulado' se excluyen — solo cargos activos generan comisión.
+     * El resultado se agrupa por order_id para facilitar la suma por orden.
+     *
+     * @param  array $orderIds Lista de IDs de órdenes de venta
+     * @return array           Mapa ['otf' => Collection agrupada, 'mrc' => Collection agrupada]
+     */
     private function getCargosByOrders(array $orderIds): array
     {
         if (empty($orderIds)) return ['otf' => collect(), 'mrc' => collect()];
@@ -47,6 +79,17 @@ class CommissionService
 
     // ── Por período (todos los vendedores) ────────────────────
 
+    /**
+     * Obtiene las comisiones de todos los vendedores para un mes y año específicos.
+     *
+     * Consulta las órdenes con year_comission = $year y month_comission = $month,
+     * obtiene los cargos asociados, y delega el procesamiento a process() para
+     * agrupar por vendedor y calcular totales.
+     *
+     * @param  string $year  Año en formato string (p.ej. '2024')
+     * @param  string $month Mes en formato string (p.ej. '03')
+     * @return array         Estructura procesada: records, cantidad, total_otf, total_mrc, total, by_vendedor
+     */
     public function getByPeriod(string $year, string $month): array
     {
         $cacheKey = "commissions:period:{$year}:{$month}";
@@ -85,6 +128,15 @@ class CommissionService
 
     // ── Por año (todos los vendedores) ────────────────────────
 
+    /**
+     * Obtiene las comisiones de todos los vendedores para un año completo.
+     *
+     * Similar a getByPeriod() pero sin filtro de mes — retorna todas las órdenes
+     * del año. El resultado se agrupa y procesa igual con process().
+     *
+     * @param  string $year Año en formato string (p.ej. '2024')
+     * @return array        Misma estructura que getByPeriod()
+     */
     public function getByYear(string $year): array
     {
         $cacheKey = "commissions:year:{$year}";
@@ -122,6 +174,17 @@ class CommissionService
 
     // ── Procesamiento ─────────────────────────────────────────
 
+    /**
+     * Procesa un array de órdenes de venta y genera la estructura de resumen de comisiones.
+     *
+     * Agrupa los registros por vendedor, suma OTF y MRC por grupo, y ordena
+     * el resultado de mayor a menor comisión total (para el ranking de vendedores).
+     * user_id en Odoo viene como [id, nombre] en search_read, por lo que
+     * se maneja como array para extraer id y nombre.
+     *
+     * @param  array $records Órdenes de venta con total_otf y total_mrc ya calculados
+     * @return array          Mapa con: records (raw), cantidad, total_otf, total_mrc, total, by_vendedor
+     */
     private function process(array $records): array
     {
         $collection = collect($records);
@@ -162,6 +225,15 @@ class CommissionService
 
     // ── Por vendedor / mes ────────────────────────────────────
 
+    /**
+     * Obtiene el detalle de comisiones de un vendedor específico para un mes.
+     *
+     * @param  int    $vendedorId ID del usuario vendedor en Odoo
+     * @param  string $year       Año (p.ej. '2024')
+     * @param  string $month      Mes (p.ej. '03')
+     * @return array|null         Mapa con vendedor_id, vendedor, periodo, otf, mrc, total.
+     *                            null si el vendedor no tiene registros en Odoo.
+     */
     public function getForVendedorMonth(int $vendedorId, string $year, string $month): ?array
     {
         $cacheKey = "commissions:vendedor:{$vendedorId}:period:{$year}:{$month}";
@@ -206,6 +278,17 @@ class CommissionService
 
     // ── Por vendedor / año ────────────────────────────────────
 
+    /**
+     * Obtiene el desglose mensual de comisiones de un vendedor para un año completo.
+     *
+     * Construye un array de 12 meses (incluso los meses sin ventas con OTF=0, MRC=0)
+     * para facilitar la generación de gráficos de tendencia anual.
+     *
+     * @param  int    $vendedorId ID del usuario vendedor en Odoo
+     * @param  string $year       Año (p.ej. '2024')
+     * @return array|null         Mapa con vendedor_id, vendedor, year, meses (12 entradas), totales.
+     *                            null si el vendedor no existe en Odoo.
+     */
     public function getForVendedorYear(int $vendedorId, string $year): ?array
     {
         $cacheKey = "commissions:vendedor:{$vendedorId}:year:{$year}";
@@ -265,6 +348,17 @@ class CommissionService
 
     // ── Helpers ───────────────────────────────────────────────
 
+    /**
+     * Resuelve el nombre del vendedor desde los registros o via consulta directa a Odoo.
+     *
+     * Intenta extraer el nombre del primer registro (user_id viene como [id, nombre]).
+     * Si no hay registros (vendedor sin ventas en el período), hace un search_read
+     * de res.users para obtener el nombre directamente.
+     *
+     * @param  array $records    Órdenes de venta del vendedor (puede estar vacío)
+     * @param  int   $vendedorId ID del usuario en Odoo
+     * @return string|null       Nombre del vendedor, o null si no existe en Odoo
+     */
     private function resolveVendedorName(array $records, int $vendedorId): ?string
     {
         if (!empty($records)) {
@@ -280,6 +374,12 @@ class CommissionService
         return $users[0]['name'] ?? null;
     }
 
+    /**
+     * Suma los montos sub_amount de todos los cargos en una colección agrupada por order_id.
+     *
+     * @param  \Illuminate\Support\Collection $grouped Colección agrupada de cargos (output de getCargosByOrders)
+     * @return float                                   Suma total de todos los sub_amount
+     */
     private function sumCargos(\Illuminate\Support\Collection $grouped): float
     {
         return $grouped->reduce(fn($carry, $group) => $carry + $group->sum('sub_amount'), 0.0);
@@ -287,16 +387,37 @@ class CommissionService
 
     // ── Caché ─────────────────────────────────────────────────
 
+    /**
+     * Invalida el caché de comisiones de un período específico.
+     *
+     * @param  string $year  Año del período a invalidar
+     * @param  string $month Mes del período a invalidar
+     * @return void
+     */
     public function clearCache(string $year, string $month): void
     {
         Cache::forget("commissions:period:{$year}:{$month}");
     }
 
+    /**
+     * Invalida el caché de comisiones de un año completo.
+     *
+     * @param  string $year Año a invalidar
+     * @return void
+     */
     public function clearCacheYear(string $year): void
     {
         Cache::forget("commissions:year:{$year}");
     }
 
+    /**
+     * Expone el OdooService subyacente para uso desde el controlador.
+     *
+     * Permite al controlador acceder a métodos de OdooService (como getExecutives())
+     * sin necesidad de inyectar dos servicios por separado.
+     *
+     * @return OdooService
+     */
     public function odoo(): OdooService
     {
         return $this->odoo;

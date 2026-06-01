@@ -6,13 +6,57 @@ use App\Http\Controllers\Controller;
 use App\Services\MspService;
 use App\Services\Sales\OdooService;
 
+/**
+ * Controlador de sincronización entre Odoo y MSP.
+ *
+ * Permite identificar y enlazar los clientes de Odoo (ERP) con los clientes de la
+ * plataforma MSP (Managed Service Provider). Esto es necesario porque en ambos sistemas
+ * los clientes se crean de forma independiente y sus nombres no siempre coinciden exactamente.
+ *
+ * Algoritmo de matching (buildFilas):
+ *  1. Exacto: cruza el `ReferenceId` de MSP con el `account_no` de Odoo (números de cuenta).
+ *     Soporta múltiples cuentas en el formato: "Cuenta 1: 100, Cuenta 2: 101".
+ *  2. Fuzzy: para los que no tienen match exacto, usa `similar_text()` con umbral de 75%
+ *     para detectar nombres similares con diferencias tipográficas o de formato.
+ *  3. Sin match: clientes que solo existen en uno de los dos sistemas.
+ *
+ * Vistas:
+ *   - admin.sincronizar.coincidencias    → Clientes con match (exacto o fuzzy)
+ *   - admin.sincronizar.sin-coincidencia → Clientes sin ningún match (solo en Odoo o solo en MSP)
+ *
+ * Rutas principales (prefijo /admin/sincronizar):
+ *   GET  /                     → index() → coincidencias()
+ *   GET  /coincidencias        → coincidencias()
+ *   GET  /sin-coincidencia     → sinCoincidencia()
+ *   POST /clear-cache          → clearCache()
+ *   POST /enlazar              → enlazar()     [AJAX JSON]
+ *   GET  /preview              → preview()     [AJAX JSON]
+ *   POST /ejecutar             → ejecutar()    [AJAX JSON]
+ *
+ * @see \App\Services\MspService          Actualiza el ReferenceId en la plataforma MSP
+ * @see \App\Services\Sales\OdooService   Obtiene el listado de partners de Odoo para sincronización
+ */
 class SincronizarController extends Controller
 {
+    /**
+     * Ruta de entrada: redirige a la vista de coincidencias.
+     *
+     * @return \Illuminate\View\View
+     */
     public function index()
     {
         return $this->coincidencias();
     }
 
+    /**
+     * Limpia la caché de datos de Odoo y MSP para forzar una recarga desde las APIs.
+     *
+     * Los datos de ambos sistemas se cachean para evitar consultas repetidas durante
+     * la sesión. Este método permite refrescar manualmente cuando se sabe que hubo
+     * cambios recientes en Odoo o en la plataforma MSP.
+     *
+     * @return \Illuminate\Http\RedirectResponse
+     */
     public function clearCache()
     {
         \Illuminate\Support\Facades\Cache::forget('odoo:sync:partners');
@@ -21,6 +65,15 @@ class SincronizarController extends Controller
         return back()->with('success', '🔄 Datos de Odoo y MSP actualizados correctamente.');
     }
 
+    /**
+     * Vista de clientes con coincidencias entre Odoo y MSP (exactas y fuzzy).
+     *
+     * Solo muestra los registros de tipo 'exacto' y 'fuzzy', ordenados de mayor
+     * a menor similitud porcentual. Los registros sin match no aparecen aquí
+     * (ver sinCoincidencia()).
+     *
+     * @return \Illuminate\View\View  Vista admin.sincronizar.coincidencias con: filas
+     */
     public function coincidencias()
     {
         ['filas' => $filas, 'errors' => $errors] = $this->buildFilas();
@@ -33,6 +86,18 @@ class SincronizarController extends Controller
         return view('admin.sincronizar.coincidencias', ['filas' => array_values($filas)]);
     }
 
+    /**
+     * Vista de clientes sin ninguna coincidencia entre sistemas.
+     *
+     * Separa en dos listas:
+     *  - `odooSinMatch`: clientes en Odoo que no encontraron pareja en MSP.
+     *  - `mspSinMatch`: clientes en MSP que no encontraron pareja en Odoo
+     *    (aunque hayan tenido un ReferenceId previo que no calza con ningún account_no actual).
+     *
+     * Ambas listas se ordenan alfabéticamente por nombre para facilitar la revisión manual.
+     *
+     * @return \Illuminate\View\View  Vista admin.sincronizar.sin-coincidencia con: odooSinMatch, mspSinMatch
+     */
     public function sinCoincidencia()
     {
         ['filas' => $filas, 'errors' => $errors] = $this->buildFilas();
@@ -50,6 +115,21 @@ class SincronizarController extends Controller
         return view('admin.sincronizar.sin-coincidencia', compact('odooSinMatch', 'mspSinMatch'));
     }
 
+    /**
+     * Enlaza manualmente pares de clientes Odoo-MSP vía AJAX.
+     *
+     * Permite al usuario confirmar manualmente pares identificados en la vista
+     * de coincidencias o crear vínculos nuevos desde la vista de sin coincidencia.
+     * Llama a MspService::updateCustomer() para escribir el número de cuenta de Odoo
+     * como ReferenceId en el cliente MSP.
+     *
+     * Errores MSP conocidos (traducidos a mensajes amigables):
+     *  - 'permission to delete' → el usuario MSP no tiene permisos de administrador.
+     *  - 'already have a customer' → el nombre ya existe en MSP (duplicado).
+     *
+     * @param  \Illuminate\Http\Request  $request  Campo: pares[] con customer_id, customer_name, numero_cuenta
+     * @return \Illuminate\Http\JsonResponse        {ok: bool, enlazados: int, errores: string[]}
+     */
     public function enlazar(\Illuminate\Http\Request $request): \Illuminate\Http\JsonResponse
     {
         $request->validate([
@@ -89,6 +169,19 @@ class SincronizarController extends Controller
         ]);
     }
 
+    /**
+     * Devuelve la lista de clientes que serán actualizados en la sincronización masiva.
+     *
+     * Filtra los registros fuzzy que cumplen todos los criterios para actualización automática:
+     *  - Tipo fuzzy (no exactos, que ya están correctamente vinculados).
+     *  - Tienen número de cuenta de Odoo.
+     *  - Tienen CustomerId de MSP.
+     *  - No tienen RmReferenceId (excluye los vinculados a MSP RM que requieren permisos especiales).
+     *
+     * Es un endpoint de vista previa sin efectos secundarios; se llama antes de ejecutar().
+     *
+     * @return \Illuminate\Http\JsonResponse  {total: int, clientes: array}
+     */
     public function preview()
     {
         ['filas' => $filas] = $this->buildFilas();
@@ -111,6 +204,18 @@ class SincronizarController extends Controller
         return response()->json(['total' => count($preview), 'clientes' => $preview]);
     }
 
+    /**
+     * Ejecuta la sincronización masiva de clientes en lote.
+     *
+     * Procesa el lote recibido (generalmente generado por preview()) y llama a
+     * MspService::updateCustomer() para cada cliente. Los errores son acumulados
+     * y devueltos sin detener el proceso completo (best-effort).
+     *
+     * Limit: set_time_limit(120) para manejar lotes grandes sin timeout de PHP.
+     *
+     * @param  \Illuminate\Http\Request  $request  Campo: lote[] con customer_id, msp_nombre, numero_cuenta
+     * @return \Illuminate\Http\JsonResponse        {actualizados: int, errores: string[]}
+     */
     public function ejecutar(\Illuminate\Http\Request $request)
     {
         set_time_limit(120);
@@ -155,6 +260,32 @@ class SincronizarController extends Controller
 
     // ─── Lógica compartida ────────────────────────────────────────────────────
 
+    /**
+     * Construye la lista completa de filas de comparación Odoo vs MSP.
+     *
+     * Proceso en 4 pasos:
+     *
+     * Paso 1 — Match exacto por número de cuenta:
+     *   Itera los clientes MSP buscando su `ReferenceId` en el índice de Odoo.
+     *   El ReferenceId puede contener múltiples cuentas en formato
+     *   "Cuenta 1: 100, Cuenta 2: 101" → extrae todos los números de 3+ dígitos.
+     *
+     * Paso 2 — Separar libres:
+     *   Los clientes que no tuvieron match exacto quedan "libres" para el paso fuzzy.
+     *
+     * Paso 3 — Match fuzzy con similar_text():
+     *   Normaliza los nombres (minúsculas, elimina sufijos numéricos tipo "- 123456",
+     *   colapsa espacios, elimina puntuación). Umbral: similitud >= 75%.
+     *   Si un cliente MSP tiene múltiples matches en Odoo, los combina en una sola fila.
+     *
+     * Paso 4 — Sin match:
+     *   Clientes de Odoo que sobran (tipo 'odoo_only') y clientes MSP sin match (tipo 'msp_only').
+     *
+     * @return array{filas: array, errors: string[], mspTodos: array}
+     *   - filas: todos los registros con campos tipo, odoo_nombre, msp_nombre, similitud, etc.
+     *   - errors: errores no fatales de conexión a Odoo o MSP.
+     *   - mspTodos: array raw completo de MSP (para uso futuro de vistas).
+     */
     private function buildFilas(): array
     {
         $errors = [];

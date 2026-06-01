@@ -7,12 +7,64 @@ use App\Services\MerakiService;
 use Illuminate\Support\Facades\Log;
 use Exception;
 
+/**
+ * Controlador del módulo Meraki.
+ *
+ * Gestiona la visualización y monitoreo de dispositivos de red Cisco Meraki
+ * a través de la API oficial de Meraki. Los datos se obtienen mediante MerakiService,
+ * que aplica caché por capas (dispositivos e inventario: 24h, estados: 5min, licencias: 48h).
+ *
+ * Estructura del módulo:
+ *  - Dashboard global con todos los dispositivos agrupados por modelo.
+ *  - Detalle por organización (redes, dispositivos, uplinks).
+ *  - Detalle por red (SSIDs, eventos, alertas de salud, clientes).
+ *  - Vista de licencias agrupadas por modelo de dispositivo.
+ *  - Central de alertas para dispositivos offline/alerting.
+ *  - Exportación a CSV de dispositivos y licencias.
+ *  - Gestión de caché (flush global o por organización/red).
+ *
+ * Vistas:
+ *   - admin.meraki.index        → Dashboard global
+ *   - admin.meraki.model        → Detalle de un modelo de dispositivo
+ *   - admin.meraki.organization → Detalle de una organización
+ *   - admin.meraki.network      → Detalle de una red
+ *   - admin.meraki.licenses     → Vista de licencias
+ *   - admin.meraki.alerts       → Central de alertas
+ *
+ * Rutas principales (prefijo /admin/meraki):
+ *   GET  /                              → index()
+ *   GET  /licenses                      → licenses()
+ *   GET  /alerts                        → alerts()
+ *   GET  /models/{model}               → modelDetail()
+ *   GET  /{orgId}                       → organization()
+ *   GET  /{orgId}/networks/{networkId}  → network()
+ *   GET  /export/devices                → exportDevices()
+ *   GET  /export/licenses               → exportLicenses()
+ *   POST /refresh-all                   → refreshAll()
+ *   POST /{orgId}/refresh               → refresh()
+ *
+ * @see \App\Services\MerakiService  Capa de acceso a la API Meraki con caché
+ */
 class MerakiController extends Controller
 {
+    /**
+     * Inyecta MerakiService vía constructor (IoC Container de Laravel).
+     *
+     * @param  \App\Services\MerakiService  $meraki
+     */
     public function __construct(protected MerakiService $meraki) {}
 
     // ─── Main dashboard — all devices grouped by model ────────────────────────
 
+    /**
+     * Dashboard global con todos los dispositivos de todas las organizaciones.
+     *
+     * Agrupa los dispositivos por modelo exacto y calcula el resumen de estados
+     * (online, offline, alerting, dormant). En caso de error de API, renderiza
+     * la vista con datos vacíos y el mensaje de error para que el usuario lo vea.
+     *
+     * @return \Illuminate\View\View  Vista admin.meraki.index con: organizations, grouped, summary
+     */
     public function index()
     {
         try {
@@ -36,6 +88,19 @@ class MerakiController extends Controller
 
     // ─── Model detail — all devices of one model across all orgs ─────────────
 
+    /**
+     * Vista de detalle de todos los dispositivos de un modelo específico en todas las organizaciones.
+     *
+     * Lógica de asignación de licencias:
+     *  1. Filtra licencias cuyo `licenseType` comience con el prefijo raw del modelo (MR, MS, MX...).
+     *  2. Asocia por número de serie (`deviceSerial`) cuando la licencia ya está asignada.
+     *  3. Para licencias del pool (sin serial asignado), las distribuye secuencialmente
+     *     entre los dispositivos sin licencia directa, según el orden que devuelve la API.
+     *  4. Calcula el resumen de licencias: activas, vencidas, sin usar.
+     *
+     * @param  string  $model  Nombre exacto del modelo (ej: "MR36", "MX67")
+     * @return \Illuminate\View\View|\Illuminate\Http\RedirectResponse
+     */
     public function modelDetail(string $model)
     {
         try {
@@ -102,6 +167,19 @@ class MerakiController extends Controller
 
     // ─── Organization detail (devices) ───────────────────────────────────────
 
+    /**
+     * Vista de detalle de una organización Meraki: redes, dispositivos, uplinks y estadísticas.
+     *
+     * Enriquecimiento de datos:
+     *  - A cada dispositivo se le adjunta su estado (online/offline) vía `_status`
+     *    y su información de uplink (WAN1/WAN2) vía `_uplink`.
+     *  - A cada red se le agrega el conteo de dispositivos totales y online.
+     *  - Se construye un mapa networkId → networkName para mostrarlo en la tabla de dispositivos.
+     *  - Los dispositivos se agrupan por modelo con contadores de estado por grupo.
+     *
+     * @param  string  $orgId  ID de la organización Meraki
+     * @return \Illuminate\View\View|\Illuminate\Http\RedirectResponse
+     */
     public function organization(string $orgId)
     {
         try {
@@ -187,6 +265,21 @@ class MerakiController extends Controller
 
     // ─── Network detail (clients + events + SSIDs) ────────────────────────────
 
+    /**
+     * Vista de detalle de una red Meraki: dispositivos, SSIDs, eventos y alertas de salud.
+     *
+     * Todos los sub-recursos (clientes, SSIDs, eventos, alertas) se obtienen con
+     * bloques try/catch independientes para que un fallo en uno no rompa el resto de la vista.
+     * Esto es importante porque no todas las redes soportan todos los endpoints
+     * (ej: SSIDs solo en redes wireless, clientes en redes con APs activos).
+     *
+     * Comportamiento de SSIDs: solo se muestran los SSIDs habilitados (`enabled: true`).
+     * Eventos: se recuperan los últimos 30.
+     *
+     * @param  string  $orgId      ID de la organización (para validar pertenencia)
+     * @param  string  $networkId  ID de la red Meraki
+     * @return \Illuminate\View\View|\Illuminate\Http\RedirectResponse
+     */
     public function network(string $orgId, string $networkId)
     {
         try {
@@ -248,6 +341,19 @@ class MerakiController extends Controller
 
     // ─── Licenses ─────────────────────────────────────────────────────────────
 
+    /**
+     * Vista de licencias agrupadas por modelo de dispositivo de todas las organizaciones.
+     *
+     * Construye un mapa serial → {model, name, orgName} a partir del inventario cacheado
+     * para enriquecer cada licencia con información del dispositivo asignado.
+     * Las licencias sin serial asignado se agrupan bajo el modelo "Sin asignar".
+     *
+     * Nota: Organizaciones con co-termination licensing no devuelven licencias individuales
+     * (devuelven array vacío sin error). Ver CLAUDE.md para detalles.
+     *
+     * @return \Illuminate\View\View  Vista admin.meraki.licenses con: byModel, total, totalActive,
+     *                                totalExpired, totalUnused
+     */
     public function licenses()
     {
         try {
@@ -324,6 +430,16 @@ class MerakiController extends Controller
 
     // ─── Alerts — dispositivos offline/alerting de todas las orgs ────────────
 
+    /**
+     * Central de alertas: lista todos los dispositivos con problemas (offline o alerting).
+     *
+     * Ordena los dispositivos problemáticos con la siguiente prioridad:
+     *  1. Estado: alerting primero, luego offline.
+     *  2. Dentro de cada estado: los más antiguos primero (lastReportedAt ascendente),
+     *     ya que los dispositivos sin reporte reciente son más críticos.
+     *
+     * @return \Illuminate\View\View  Vista admin.meraki.alerts con: problematic, summary
+     */
     public function alerts()
     {
         try {
@@ -364,6 +480,15 @@ class MerakiController extends Controller
 
     // ─── Exports ──────────────────────────────────────────────────────────────
 
+    /**
+     * Exporta todos los dispositivos Meraki a un archivo CSV con BOM UTF-8.
+     *
+     * Incluye: nombre, modelo, serial, estado, IP LAN, organización y última conexión.
+     * La fecha se formatea en d/m/Y H:i para legibilidad en español.
+     * El BOM UTF-8 (0xEF 0xBB 0xBF) garantiza que Excel lo abra correctamente en Windows.
+     *
+     * @return \Symfony\Component\HttpFoundation\StreamedResponse  Descarga CSV
+     */
     public function exportDevices()
     {
         $allDevices = $this->meraki->getAllDevicesWithStatuses();
@@ -389,6 +514,15 @@ class MerakiController extends Controller
         return $this->streamCsv('meraki-dispositivos-' . now()->format('Y-m-d'), $headers, $rows);
     }
 
+    /**
+     * Exporta todas las licencias Meraki de todas las organizaciones a CSV con BOM UTF-8.
+     *
+     * Incluye: modelo del dispositivo, nombre, serial, tipo de licencia, estado,
+     * fecha de vencimiento y organización. Los errores por organización se loguean
+     * como warning sin detener la exportación de las demás organizaciones.
+     *
+     * @return \Symfony\Component\HttpFoundation\StreamedResponse  Descarga CSV
+     */
     public function exportLicenses()
     {
         $organizations = $this->meraki->getOrganizations();
@@ -431,6 +565,17 @@ class MerakiController extends Controller
         return $this->streamCsv('meraki-licencias-' . now()->format('Y-m-d'), $headers, $rows);
     }
 
+    /**
+     * Genera una respuesta CSV con streaming para evitar cargar todo el archivo en memoria.
+     *
+     * Escribe directamente a php://output mediante fputcsv para manejar eficientemente
+     * grandes volúmenes de datos. Incluye BOM UTF-8 al inicio para compatibilidad con Excel.
+     *
+     * @param  string  $filename  Nombre del archivo sin extensión (se agrega .csv)
+     * @param  array   $headers   Array de strings con los encabezados de columna
+     * @param  array   $rows      Array de arrays con los datos de cada fila
+     * @return \Symfony\Component\HttpFoundation\StreamedResponse
+     */
     private function streamCsv(string $filename, array $headers, array $rows): \Symfony\Component\HttpFoundation\StreamedResponse
     {
         return response()->streamDownload(function () use ($headers, $rows) {
@@ -449,12 +594,29 @@ class MerakiController extends Controller
 
     // ─── Cache flush ──────────────────────────────────────────────────────────
 
+    /**
+     * Invalida la caché global de todos los dispositivos y redirige al dashboard.
+     *
+     * Útil cuando se sabe que hubo cambios en la infraestructura Meraki
+     * y se necesita forzar la recarga sin esperar el TTL de 24h.
+     *
+     * @return \Illuminate\Http\RedirectResponse
+     */
     public function refreshAll()
     {
         $this->meraki->flushAllDevicesCache();
         return redirect()->route('admin.meraki.index')->with('success', 'Datos actualizados.');
     }
 
+    /**
+     * Invalida la caché de una organización específica y la caché global de dispositivos.
+     *
+     * Se limpia también la caché global porque el inventario total incluye
+     * los dispositivos de esta organización.
+     *
+     * @param  string  $orgId  ID de la organización Meraki
+     * @return \Illuminate\Http\RedirectResponse
+     */
     public function refresh(string $orgId)
     {
         $this->meraki->flushOrgCache($orgId);
@@ -462,6 +624,13 @@ class MerakiController extends Controller
         return back()->with('success', 'Cache de organización actualizado.');
     }
 
+    /**
+     * Invalida la caché de una red específica.
+     *
+     * @param  string  $orgId      ID de la organización (requerido por la ruta, no usado directamente)
+     * @param  string  $networkId  ID de la red Meraki cuya caché se limpia
+     * @return \Illuminate\Http\RedirectResponse
+     */
     public function refreshNetwork(string $orgId, string $networkId)
     {
         $this->meraki->flushNetworkCache($networkId);
@@ -470,6 +639,20 @@ class MerakiController extends Controller
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
+    /**
+     * Deriva el prefijo de categoría de visualización a partir del nombre del modelo.
+     *
+     * Mapeo de prefijos raw de Meraki → categorías de visualización:
+     *  - MX → MX (Security Appliance / Firewall)
+     *  - MS → MS (Switch)
+     *  - MG → MG (Cellular Gateway)
+     *  - MV → MV (Security Camera)
+     *  - MT → MT (Sensor)
+     *  - MR → AP (Access Point — renombrado para mostrar "AP" en la UI)
+     *
+     * @param  string  $model  Nombre del modelo (ej: "MR36", "MX67", "MS120-8")
+     * @return string          Prefijo de categoría (MX, MS, MG, MV, MT o AP)
+     */
     protected function modelPrefix(string $model): string
     {
         foreach (['MX', 'MS', 'MG', 'MV', 'MT', 'MR'] as $prefix) {
@@ -480,7 +663,16 @@ class MerakiController extends Controller
         return 'AP';
     }
 
-    /** Raw Meraki prefix from model name — used for license type matching. */
+    /**
+     * Obtiene el prefijo raw del modelo Meraki sin mapeo de visualización.
+     *
+     * A diferencia de modelPrefix(), este método devuelve el prefijo original de Meraki
+     * (MR en lugar de AP) para usarlo en comparaciones con el campo `licenseType` de la API,
+     * que sigue la convención original de Meraki (ej: "MR-ENT-1D").
+     *
+     * @param  string  $model  Nombre del modelo Meraki
+     * @return string          Prefijo raw en mayúsculas (MX, MS, MG, MV, MT, MR o primeras 2 letras)
+     */
     protected function rawModelPrefix(string $model): string
     {
         foreach (['MX', 'MS', 'MG', 'MV', 'MT', 'MR'] as $prefix) {
@@ -491,6 +683,17 @@ class MerakiController extends Controller
         return strtoupper(substr($model, 0, 2));
     }
 
+    /**
+     * Agrupa un array de dispositivos por modelo exacto y calcula contadores de estado.
+     *
+     * Devuelve una tupla [grouped, summary]:
+     *  - `grouped`: array indexado por nombre de modelo, cada entrada con 'devices', 'online', 'offline', 'alerting'.
+     *  - `summary`: contadores globales para mostrar en el header del dashboard.
+     * Los grupos se ordenan alfabéticamente por modelo (ksort).
+     *
+     * @param  array  $devices  Array de dispositivos con campo `_status` adjunto
+     * @return array            [grouped: array, summary: array]
+     */
     protected function groupByModel(array $devices): array
     {
         $grouped = [];
@@ -523,6 +726,12 @@ class MerakiController extends Controller
         return [$grouped, $summary];
     }
 
+    /**
+     * Calcula el resumen de estados (online, offline, alerting) de un conjunto de dispositivos.
+     *
+     * @param  array  $devices  Dispositivos con el campo `_status.status` adjunto
+     * @return array            {total: int, online: int, offline: int, alerting: int}
+     */
     protected function statusSummary(array $devices): array
     {
         $online = $offline = $alerting = 0;
