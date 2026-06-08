@@ -136,7 +136,7 @@ class MspReportsImport implements ToModel, WithHeadingRow, WithChunkReading, Ski
         $mesCierreRaw        = $this->toStr($row['mes_cierre'] ?? null);
         $tipoTicket          = $this->toStr($row['tipo_de_ticket'] ?? null);
         $causaDano           = $this->toStr($row['causa_de_dano'] ?? null);
-        $solucion            = $this->toStr($row['solucion'] ?? $row['Columna1'] ?? null);
+        $solucion            = $this->toStr($row['Columna1'] ?? null);
         $detalle             = $this->toStr($row['detalle'] ?? null);
         $tipoCliente         = $this->toStr($row['tipo_de_cliente'] ?? null);
         $ubicacionHopsa      = $this->toStr($row['ubicacion_hopsa'] ?? null);
