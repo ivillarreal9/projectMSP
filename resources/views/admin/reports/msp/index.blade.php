@@ -184,6 +184,9 @@
 
 @push('scripts')
 <script>
+// Escapa texto interpolado en innerHTML (nombres de archivo vienen de SharePoint)
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
 // ── SharePoint lazy load ──────────────────────────────────────────────────────
 function loadSharePointFiles() {
     const btn    = document.getElementById('loadBtn');
@@ -201,7 +204,7 @@ function loadSharePointFiles() {
     fetch('{{ route("admin.msp.index") }}', {
         headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
     })
-    .then(r => r.json())
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(data => {
         empty.classList.add('hidden');
         errDiv.classList.add('hidden');
@@ -223,8 +226,8 @@ function loadSharePointFiles() {
                         <i class="fa-solid fa-file-excel text-green-600"></i>
                     </div>
                     <div class="flex-1 min-w-0">
-                        <div class="font-medium text-sm text-gray-800 dark:text-white truncate">${f.name}</div>
-                        <div class="text-xs text-gray-400">${f.size} — Modificado: ${new Date(f.modified).toLocaleDateString('es-PA')}</div>
+                        <div class="font-medium text-sm text-gray-800 dark:text-white truncate">${esc(f.name)}</div>
+                        <div class="text-xs text-gray-400">${esc(f.size)} — Modificado: ${new Date(f.modified).toLocaleDateString('es-PA')}</div>
                     </div>
                     <button onclick="openImportModal(this)"
                             class="flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-lg text-white text-xs font-medium hover:opacity-90 transition"

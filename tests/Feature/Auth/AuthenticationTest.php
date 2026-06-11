@@ -27,7 +27,8 @@ class AuthenticationTest extends TestCase
         ]);
 
         $this->assertAuthenticated();
-        $response->assertRedirect(route('dashboard', absolute: false));
+        // Usuario sin 2FA configurado → el login lo manda al setup de 2FA
+        $response->assertRedirect(route('2fa.setup', absolute: false));
     }
 
     public function test_users_can_not_authenticate_with_invalid_password(): void

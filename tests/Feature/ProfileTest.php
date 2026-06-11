@@ -66,7 +66,7 @@ class ProfileTest extends TestCase
         $user = User::factory()->create();
 
         $response = $this
-            ->actingAs($user)
+            ->actingAsWith2fa($user)
             ->delete('/profile', [
                 'password' => 'password',
             ]);
@@ -84,7 +84,7 @@ class ProfileTest extends TestCase
         $user = User::factory()->create();
 
         $response = $this
-            ->actingAs($user)
+            ->actingAsWith2fa($user)
             ->from('/profile')
             ->delete('/profile', [
                 'password' => 'wrong-password',

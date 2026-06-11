@@ -248,14 +248,14 @@ const solUbic = @json($stats['por_ubicacion_solicitudes']);
 new Chart(document.getElementById('chartSolUbicacion'), {
     type: 'bar',
     data: { labels: Object.keys(solUbic), datasets: [{ data: Object.values(solUbic), backgroundColor: TEAL, borderRadius: 4 }] },
-    options: { indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } } }
+    options: { indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { precision: 0 } } } }
 });
 
 const incUbic = @json($stats['por_ubicacion_incidentes']);
 new Chart(document.getElementById('chartIncUbicacion'), {
     type: 'bar',
     data: { labels: Object.keys(incUbic), datasets: [{ data: Object.values(incUbic), backgroundColor: TEAL, borderRadius: 4 }] },
-    options: { indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } } }
+    options: { indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { precision: 0 } } } }
 });
 
 const clasif = @json($stats['por_clasificacion']);
@@ -276,7 +276,7 @@ new Chart(document.getElementById('chartAlarmaReportado'), {
             { label: 'Reportado', data: semanasLabels.map(s => semanas[s]?.Reportado || 0), backgroundColor: ORANGE, borderRadius: 3 },
         ]
     },
-    options: { scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }, plugins: { legend: { position: 'top' } } }
+    options: { scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }, plugins: { legend: { position: 'top' } } }
 });
 </script>
 @endpush

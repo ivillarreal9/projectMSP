@@ -16,7 +16,6 @@ class AuthTest extends TestCase
         return User::factory()->create(array_merge([
             'email'    => 'test@ovnicom.com',
             'password' => bcrypt('password123'),
-            'role'     => 'editor',
         ], $overrides));
     }
 
@@ -42,8 +41,9 @@ class AuthTest extends TestCase
     public function test_usuario_puede_hacer_login_con_credenciales_validas(): void
     {
         $user = $this->makeUser();
+        // Usuario sin 2FA configurado → el login lo manda al setup de 2FA
         $this->attemptLogin('test@ovnicom.com', 'password123')
-            ->assertRedirect(route('dashboard'));
+            ->assertRedirect(route('2fa.setup'));
         $this->assertAuthenticatedAs($user);
     }
 

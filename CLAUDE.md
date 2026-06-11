@@ -74,10 +74,14 @@ Conecta con la API de Cisco Meraki para monitorear dispositivos de red, licencia
 | GET | `/admin/meraki/models/{model}` | Detalle de modelo: dispositivos + licencias |
 | GET | `/admin/meraki/{orgId}` | Detalle de organización: redes, uplinks, dispositivos |
 | GET | `/admin/meraki/{orgId}/networks/{networkId}` | Detalle de red: SSIDs, eventos, alertas, clientes |
-| GET | `/admin/meraki/export/devices` | Exportar todos los dispositivos a CSV |
-| GET | `/admin/meraki/export/licenses` | Exportar licencias a CSV |
+| GET | `/admin/meraki/export/devices` | Exportar dispositivos a Excel (.xlsx). Acepta `?org={orgId}` para filtrar por organización |
+| GET | `/admin/meraki/export/licenses` | Exportar licencias a Excel (.xlsx) |
+| GET | `/admin/meraki/export/alerts` | Exportar dispositivos con alertas (offline/alerting) a Excel (.xlsx) |
 | POST | `/admin/meraki/refresh-all` | Limpiar caché global |
 | POST | `/admin/meraki/{orgId}/refresh` | Limpiar caché de organización |
+| POST | `/admin/meraki/{orgId}/networks/{networkId}/refresh` | Limpiar caché de red |
+
+> Todas las vistas del módulo incluyen filtros client-side (búsqueda + estado/categoría) con Alpine.js, sin recargar la página.
 
 ### Variables de entorno requeridas
 ```
@@ -103,6 +107,8 @@ MERAKI_BASE_URL=https://api.meraki.com/api/v1
 ### Notas importantes
 - Organizaciones con **co-termination licensing** (no per-device) devuelven `[]` en licencias sin lanzar excepción — se loguea como info.
 - El caché de todos los dispositivos es **global** (`meraki_all_devices_global`) — compartido entre todos los usuarios, no por sesión.
+- Los datos volátiles (statuses, uplinks, eventos, alertas, clients overview) usan **`Cache::flexible`** (stale-while-revalidate): frescos 3–5 min, servibles hasta 15–30 min mientras se regeneran en segundo plano.
+- Las peticiones HTTP tienen **reintentos automáticos** (429 honrando `Retry-After`, 5xx con backoff) y los endpoints de listado **paginan** por cabecera `Link` con `perPage=1000`.
 
 ### Comando warm-cache
 ```bash

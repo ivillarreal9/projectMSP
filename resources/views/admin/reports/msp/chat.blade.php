@@ -100,6 +100,13 @@
 let history = [];
 let pendingAction = null;
 
+// Escapa texto interpolado en innerHTML (mensajes del usuario y respuestas del LLM)
+function escHtml(str) {
+    const d = document.createElement('div');
+    d.textContent = String(str ?? '');
+    return d.innerHTML;
+}
+
 function addMessage(role, content, isLoading = false) {
     const container = document.getElementById('chatMessages');
     const div = document.createElement('div');
@@ -107,7 +114,7 @@ function addMessage(role, content, isLoading = false) {
 
     if (role === 'user') {
         div.innerHTML = `
-            <div class="bg-orange-500 text-white rounded-2xl rounded-tr-none px-4 py-3 max-w-2xl text-sm">${content}</div>
+            <div class="bg-orange-500 text-white rounded-2xl rounded-tr-none px-4 py-3 max-w-2xl text-sm">${escHtml(content)}</div>
             <div class="w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center bg-gray-200 text-gray-600 text-xs font-bold">TÚ</div>
         `;
     } else {
@@ -117,7 +124,7 @@ function addMessage(role, content, isLoading = false) {
                 <div class="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style="animation-delay:150ms"></div>
                 <div class="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style="animation-delay:300ms"></div>
                </div>`
-            : `<p class="text-sm text-gray-800 whitespace-pre-wrap">${content}</p>`;
+            : `<p class="text-sm text-gray-800 whitespace-pre-wrap">${escHtml(content)}</p>`;
 
         div.innerHTML = `
             <div class="w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center text-white text-xs" style="background:var(--ovni-orange)">IA</div>
@@ -187,7 +194,7 @@ function handleAction(action) {
                     <i class="fa-solid fa-file-pdf text-orange-600 text-xl"></i>
                 </div>
                 <h3 class="font-bold text-gray-800 mb-1">Descargar PDF</h3>
-                <p class="text-sm text-gray-600">¿Descargar el reporte de <strong>${action.customer}</strong> para el período <strong>${action.periodo}</strong>?</p>
+                <p class="text-sm text-gray-600">¿Descargar el reporte de <strong>${escHtml(action.customer)}</strong> para el período <strong>${escHtml(action.periodo)}</strong>?</p>
             </div>`;
     } else if (action.action === 'send_email') {
         content.innerHTML = `
@@ -196,7 +203,7 @@ function handleAction(action) {
                     <i class="fa-solid fa-envelope text-blue-600 text-xl"></i>
                 </div>
                 <h3 class="font-bold text-gray-800 mb-1">Enviar por correo</h3>
-                <p class="text-sm text-gray-600">¿Enviar el PDF de <strong>${action.customer}</strong> a <strong>${action.email}</strong>?</p>
+                <p class="text-sm text-gray-600">¿Enviar el PDF de <strong>${escHtml(action.customer)}</strong> a <strong>${escHtml(action.email)}</strong>?</p>
             </div>`;
     }
 

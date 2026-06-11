@@ -150,7 +150,9 @@ class MspReport extends Model
                     });
         });
 
-        $tickets = $q->orderByRaw("FIELD(tipo_ticket, 'Incidente', 'Solicitud')")->get();
+        // CASE en vez de FIELD() (solo MySQL) para compatibilidad con SQLite (tests).
+        // Equivalente: el whereIn ya limita tipo_ticket a estos dos valores.
+        $tickets = $q->orderByRaw("CASE tipo_ticket WHEN 'Incidente' THEN 1 WHEN 'Solicitud' THEN 2 ELSE 3 END")->get();
 
         $incidentes  = $tickets->where('tipo_ticket', 'Incidente');
         $solicitudes = $tickets->where('tipo_ticket', 'Solicitud');

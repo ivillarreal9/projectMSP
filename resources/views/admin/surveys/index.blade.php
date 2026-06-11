@@ -345,7 +345,7 @@
                 },
                 body: JSON.stringify({ nombre: name, campos })
             })
-            .then(r => r.json())
+            .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
             .then(data => {
                 document.getElementById('survey-snippet-value').textContent = data.snippet;
                 document.getElementById('survey-form-step').classList.add('hidden');
@@ -409,7 +409,7 @@
                     'Accept': 'application/json',
                 }
             })
-            .then(r => r.json())
+            .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
             .then(data => {
                 prompt('Tu nuevo token de API (cópialo ahora):', data.token);
             })
@@ -534,7 +534,7 @@
                 'Accept':       'application/json',
             }
         })
-        .then(r => r.json())
+        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
         .then(data => {
             document.getElementById('token-value').textContent = data.token;
             document.getElementById('token-confirm-step').classList.add('hidden');

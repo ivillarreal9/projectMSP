@@ -94,14 +94,16 @@
                     'Peripheral'       => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/>',
                     'Software'         => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>',
                 ];
+                // Clases Tailwind completas: el compilador JIT no genera clases
+                // compuestas dinámicamente (p.ej. "bg-{$x}-50")
                 $colors = [
-                    'Computer'         => ['border' => 'blue-400',   'bg' => 'blue-50',   'darkbg' => 'blue-900/30',   'icon' => 'blue-500',   'text' => 'blue-600'],
-                    'NetworkEquipment' => ['border' => 'cyan-400',   'bg' => 'cyan-50',   'darkbg' => 'cyan-900/30',   'icon' => 'cyan-500',   'text' => 'cyan-600'],
-                    'Printer'          => ['border' => 'teal-400',   'bg' => 'teal-50',   'darkbg' => 'teal-900/30',   'icon' => 'teal-500',   'text' => 'teal-600'],
-                    'Phone'            => ['border' => 'green-400',  'bg' => 'green-50',  'darkbg' => 'green-900/30',  'icon' => 'green-500',  'text' => 'green-600'],
-                    'Monitor'          => ['border' => 'indigo-400', 'bg' => 'indigo-50', 'darkbg' => 'indigo-900/30', 'icon' => 'indigo-500', 'text' => 'indigo-600'],
-                    'Peripheral'       => ['border' => 'purple-400', 'bg' => 'purple-50', 'darkbg' => 'purple-900/30', 'icon' => 'purple-500', 'text' => 'purple-600'],
-                    'Software'         => ['border' => 'orange-400', 'bg' => 'orange-50', 'darkbg' => 'orange-900/30', 'icon' => 'orange-500', 'text' => 'orange-600'],
+                    'Computer'         => ['hover' => 'hover:border-blue-400 dark:hover:border-blue-400',     'arrow' => 'group-hover:text-blue-400',   'iconbg' => 'bg-blue-50 dark:bg-blue-900/30',     'icon' => 'text-blue-500',   'title' => 'group-hover:text-blue-600 dark:group-hover:text-blue-500'],
+                    'NetworkEquipment' => ['hover' => 'hover:border-cyan-400 dark:hover:border-cyan-400',     'arrow' => 'group-hover:text-cyan-400',   'iconbg' => 'bg-cyan-50 dark:bg-cyan-900/30',     'icon' => 'text-cyan-500',   'title' => 'group-hover:text-cyan-600 dark:group-hover:text-cyan-500'],
+                    'Printer'          => ['hover' => 'hover:border-teal-400 dark:hover:border-teal-400',     'arrow' => 'group-hover:text-teal-400',   'iconbg' => 'bg-teal-50 dark:bg-teal-900/30',     'icon' => 'text-teal-500',   'title' => 'group-hover:text-teal-600 dark:group-hover:text-teal-500'],
+                    'Phone'            => ['hover' => 'hover:border-green-400 dark:hover:border-green-400',   'arrow' => 'group-hover:text-green-400',  'iconbg' => 'bg-green-50 dark:bg-green-900/30',   'icon' => 'text-green-500',  'title' => 'group-hover:text-green-600 dark:group-hover:text-green-500'],
+                    'Monitor'          => ['hover' => 'hover:border-indigo-400 dark:hover:border-indigo-400', 'arrow' => 'group-hover:text-indigo-400', 'iconbg' => 'bg-indigo-50 dark:bg-indigo-900/30', 'icon' => 'text-indigo-500', 'title' => 'group-hover:text-indigo-600 dark:group-hover:text-indigo-500'],
+                    'Peripheral'       => ['hover' => 'hover:border-purple-400 dark:hover:border-purple-400', 'arrow' => 'group-hover:text-purple-400', 'iconbg' => 'bg-purple-50 dark:bg-purple-900/30', 'icon' => 'text-purple-500', 'title' => 'group-hover:text-purple-600 dark:group-hover:text-purple-500'],
+                    'Software'         => ['hover' => 'hover:border-orange-400 dark:hover:border-orange-400', 'arrow' => 'group-hover:text-orange-400', 'iconbg' => 'bg-orange-50 dark:bg-orange-900/30', 'icon' => 'text-orange-500', 'title' => 'group-hover:text-orange-600 dark:group-hover:text-orange-500'],
                 ];
                 @endphp
 
@@ -109,29 +111,26 @@
                 @php $c = $colors[$type] ?? $colors['Computer']; @endphp
                 <a href="{{ route('admin.glpi.items', $type) }}"
                    class="group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5
-                          hover:border-{{ $c['border'] }} dark:hover:border-{{ $c['border'] }}
-                          hover:shadow-md transition-all duration-200">
+                          {{ $c['hover'] }} hover:shadow-md transition-all duration-200">
 
                     <div class="flex items-start justify-between mb-4">
-                        <div class="w-10 h-10 bg-{{ $c['bg'] }} dark:bg-{{ $c['darkbg'] }} rounded-lg flex items-center justify-center
-                                    group-hover:bg-{{ $c['bg'] }} transition">
-                            <svg class="w-5 h-5 text-{{ $c['icon'] }}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <div class="w-10 h-10 {{ $c['iconbg'] }} rounded-lg flex items-center justify-center transition">
+                            <svg class="w-5 h-5 {{ $c['icon'] }}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 {!! $icons[$type] ?? $icons['Computer'] !!}
                             </svg>
                         </div>
-                        <svg class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-{{ $c['border'] }} transition"
+                        <svg class="w-4 h-4 text-gray-300 dark:text-gray-600 {{ $c['arrow'] }} transition"
                              fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                         </svg>
                     </div>
 
-                    <h3 class="text-sm font-semibold text-gray-800 dark:text-gray-200
-                               group-hover:text-{{ $c['text'] }} dark:group-hover:text-{{ $c['icon'] }} transition">
+                    <h3 class="text-sm font-semibold text-gray-800 dark:text-gray-200 {{ $c['title'] }} transition">
                         {{ $info['label'] }}
                     </h3>
 
                     <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                        <span class="text-lg font-bold text-{{ $c['icon'] }}">{{ number_format($info['total']) }}</span>
+                        <span class="text-lg font-bold {{ $c['icon'] }}">{{ number_format($info['total']) }}</span>
                         registros
                     </p>
                 </a>

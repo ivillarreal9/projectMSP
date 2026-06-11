@@ -62,7 +62,7 @@
                     <div class="font-medium text-gray-800 text-sm truncate">{{ $file['name'] }}</div>
                     <div class="text-xs text-gray-400 mt-0.5">
                         {{ $file['size'] }} —
-                        Modificado: {{ \Carbon\Carbon::parse($file['modified'])->format('d/m/Y H:i') }}
+                        Modificado: {{ rescue(fn () => \Carbon\Carbon::parse($file['modified'])->format('d/m/Y H:i'), '—', false) }}
                     </div>
                 </div>
                 <button onclick="openImportModal('{{ $file['name'] }}')"

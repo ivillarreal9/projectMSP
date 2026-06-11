@@ -2,8 +2,12 @@
 
 namespace App\Services;
 
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Exception;
 
 /**
@@ -21,9 +25,15 @@ use Exception;
  *
  * Estrategia de caché:
  *   - Datos estáticos (inventario, redes, licencias): 24 h – 48 h
- *   - Datos de estado (online/offline, uplinks, alertas): 2 – 5 min
+ *   - Datos de estado (online/offline, uplinks, alertas): caché flexible
+ *     (stale-while-revalidate): frescos 3–5 min, servibles hasta 15–30 min
+ *     mientras se regeneran en segundo plano sin bloquear al usuario.
  *   - El caché global meraki_all_devices_global es compartido (no por usuario)
  *     para que una sola recarga de la API beneficie a todos los usuarios activos.
+ *
+ * Resiliencia HTTP:
+ *   - Reintentos automáticos ante 429 (honrando Retry-After) y 5xx.
+ *   - Paginación por cabecera Link en endpoints de listado (perPage=1000).
  *
  * Dependencias externas:
  *   - Cisco Meraki API v1  : MERAKI_BASE_URL + MERAKI_API_KEY en .env
@@ -84,7 +94,7 @@ class MerakiService
     public function getNetworks(string $orgId): array
     {
         return Cache::remember("meraki_networks_{$orgId}", now()->addHours(24), fn () =>
-            $this->get("/organizations/{$orgId}/networks")
+            $this->getAllPages("/organizations/{$orgId}/networks")
         );
     }
 
@@ -114,14 +124,15 @@ class MerakiService
     public function getDevices(string $orgId): array
     {
         return Cache::remember("meraki_devices_{$orgId}", now()->addHours(24), fn () =>
-            $this->get("/organizations/{$orgId}/devices")
+            $this->getAllPages("/organizations/{$orgId}/devices")
         );
     }
 
     /**
      * Retorna el estado online/offline/alerting de cada dispositivo de la organización.
      *
-     * TTL corto (5 min) porque los estados cambian frecuentemente.
+     * Caché flexible (stale-while-revalidate): fresco 5 min, servible hasta 30 min
+     * mientras se regenera en segundo plano — el usuario nunca espera a la API.
      *
      * @param  string $orgId ID de la organización
      * @return array         Lista de estados con serial, status, lastReportedAt, etc.
@@ -129,8 +140,8 @@ class MerakiService
      */
     public function getDeviceStatuses(string $orgId): array
     {
-        return Cache::remember("meraki_device_statuses_{$orgId}", now()->addMinutes(5), fn () =>
-            $this->get("/organizations/{$orgId}/devices/statuses")
+        return Cache::flexible("meraki_device_statuses_{$orgId}", [300, 1800], fn () =>
+            $this->getAllPages("/organizations/{$orgId}/devices/statuses")
         );
     }
 
@@ -146,7 +157,7 @@ class MerakiService
      */
     public function getDeviceStatusesOverview(string $orgId): array
     {
-        return Cache::remember("meraki_device_statuses_overview_{$orgId}", now()->addMinutes(5), fn () =>
+        return Cache::flexible("meraki_device_statuses_overview_{$orgId}", [300, 1800], fn () =>
             $this->get("/organizations/{$orgId}/devices/statuses/overview")
         );
     }
@@ -227,8 +238,8 @@ class MerakiService
      */
     public function getUplinkStatuses(string $orgId): array
     {
-        return Cache::remember("meraki_uplink_statuses_{$orgId}", now()->addMinutes(5), fn () =>
-            $this->get("/organizations/{$orgId}/uplinks/statuses")
+        return Cache::flexible("meraki_uplink_statuses_{$orgId}", [300, 1800], fn () =>
+            $this->getAllPages("/organizations/{$orgId}/uplinks/statuses")
         );
     }
 
@@ -248,7 +259,7 @@ class MerakiService
     public function getNetworkClients(string $networkId, int $timespan = 86400): array
     {
         return Cache::remember("meraki_network_clients_{$networkId}_{$timespan}", now()->addMinutes(3), fn () =>
-            $this->get("/networks/{$networkId}/clients?timespan={$timespan}&perPage=1000")
+            $this->getAllPages("/networks/{$networkId}/clients?timespan={$timespan}")
         );
     }
 
@@ -263,7 +274,7 @@ class MerakiService
      */
     public function getNetworkClientsOverview(string $networkId): array
     {
-        return Cache::remember("meraki_network_clients_overview_{$networkId}", now()->addMinutes(3), fn () =>
+        return Cache::flexible("meraki_network_clients_overview_{$networkId}", [180, 900], fn () =>
             $this->get("/networks/{$networkId}/clients/overview")
         );
     }
@@ -299,7 +310,7 @@ class MerakiService
      */
     public function getNetworkEvents(string $networkId, int $perPage = 50): array
     {
-        return Cache::remember("meraki_network_events_{$networkId}_{$perPage}", now()->addMinutes(5), fn () =>
+        return Cache::flexible("meraki_network_events_{$networkId}_{$perPage}", [300, 1800], fn () =>
             $this->get("/networks/{$networkId}/events?perPage={$perPage}")
         );
     }
@@ -316,7 +327,7 @@ class MerakiService
      */
     public function getNetworkHealthAlerts(string $networkId): array
     {
-        return Cache::remember("meraki_health_alerts_{$networkId}", now()->addMinutes(5), fn () =>
+        return Cache::flexible("meraki_health_alerts_{$networkId}", [300, 1800], fn () =>
             $this->get("/networks/{$networkId}/health/alerts")
         );
     }
@@ -356,11 +367,11 @@ class MerakiService
     {
         return Cache::remember("meraki_licenses_{$orgId}", now()->addHours(48), function () use ($orgId) {
             try {
-                return $this->get("/organizations/{$orgId}/licenses");
+                return $this->getAllPages("/organizations/{$orgId}/licenses");
             } catch (Exception $e) {
                 // 400 = org usa co-termination, no per-device licensing → sin licencias individuales
                 if (str_contains($e->getMessage(), '400') || str_contains($e->getMessage(), 'per-device')) {
-                    \Illuminate\Support\Facades\Log::info("Meraki org [{$orgId}] usa co-termination licensing, se omiten licencias individuales.");
+                    Log::info("Meraki org [{$orgId}] usa co-termination licensing, se omiten licencias individuales.");
                     return [];
                 }
                 throw $e;
@@ -401,7 +412,7 @@ class MerakiService
 
                     $all = array_merge($all, $devices);
                 } catch (Exception $e) {
-                    \Illuminate\Support\Facades\Log::warning("Meraki getAllDevices org [{$org['id']}]: " . $e->getMessage());
+                    Log::warning("Meraki getAllDevices org [{$org['id']}]: " . $e->getMessage());
                 }
             }
 
@@ -440,11 +451,11 @@ class MerakiService
 
         foreach ($organizations as $org) {
             $orgId = $org['id'];
-            try { $this->getDevices($orgId); }        catch (Exception $e) { \Illuminate\Support\Facades\Log::warning("warmCache devices [{$orgId}]: " . $e->getMessage()); }
-            try { $this->getDeviceStatuses($orgId); } catch (Exception $e) { \Illuminate\Support\Facades\Log::warning("warmCache statuses [{$orgId}]: " . $e->getMessage()); }
-            try { $this->getNetworks($orgId); }       catch (Exception $e) { \Illuminate\Support\Facades\Log::warning("warmCache networks [{$orgId}]: " . $e->getMessage()); }
-            try { $this->getUplinkStatuses($orgId); } catch (Exception $e) { \Illuminate\Support\Facades\Log::warning("warmCache uplinks [{$orgId}]: " . $e->getMessage()); }
-            try { $this->getLicenses($orgId); }       catch (Exception $e) { \Illuminate\Support\Facades\Log::warning("warmCache licenses [{$orgId}]: " . $e->getMessage()); }
+            try { $this->getDevices($orgId); }        catch (Exception $e) { Log::warning("warmCache devices [{$orgId}]: " . $e->getMessage()); }
+            try { $this->getDeviceStatuses($orgId); } catch (Exception $e) { Log::warning("warmCache statuses [{$orgId}]: " . $e->getMessage()); }
+            try { $this->getNetworks($orgId); }       catch (Exception $e) { Log::warning("warmCache networks [{$orgId}]: " . $e->getMessage()); }
+            try { $this->getUplinkStatuses($orgId); } catch (Exception $e) { Log::warning("warmCache uplinks [{$orgId}]: " . $e->getMessage()); }
+            try { $this->getLicenses($orgId); }       catch (Exception $e) { Log::warning("warmCache licenses [{$orgId}]: " . $e->getMessage()); }
         }
 
         // Regenerar el caché global combinado
@@ -487,7 +498,8 @@ class MerakiService
         Cache::forget("meraki_network_clients_{$networkId}_86400");
         Cache::forget("meraki_network_clients_overview_{$networkId}");
         Cache::forget("meraki_wireless_ssids_{$networkId}");
-        Cache::forget("meraki_network_events_{$networkId}_50");
+        Cache::forget("meraki_network_events_{$networkId}_30"); // perPage usado por la vista de red
+        Cache::forget("meraki_network_events_{$networkId}_50"); // perPage por defecto
         Cache::forget("meraki_health_alerts_{$networkId}");
     }
 
@@ -507,18 +519,99 @@ class MerakiService
      */
     protected function get(string $path): array
     {
+        return $this->getResponse($path)->json() ?? [];
+    }
+
+    /**
+     * Obtiene todas las páginas de un endpoint paginado de la API Meraki.
+     *
+     * Meraki pagina mediante la cabecera `Link` (rel=next) con un máximo de
+     * 1000 ítems por página. Sin esto, organizaciones con más de 1000
+     * dispositivos/licencias quedarían truncadas silenciosamente.
+     *
+     * @param  string $path    Ruta relativa al baseUrl (puede incluir query string)
+     * @param  int    $perPage Ítems por página (máx. 1000 según Meraki)
+     * @return array           Todos los ítems de todas las páginas concatenados
+     * @throws Exception       si la API retorna error
+     */
+    protected function getAllPages(string $path, int $perPage = 1000): array
+    {
+        $separator = str_contains($path, '?') ? '&' : '?';
+        $url = "{$this->baseUrl}{$path}{$separator}perPage={$perPage}";
+        $all = [];
+
+        // Tope de 50 páginas (50k ítems) como salvaguarda ante un Link circular
+        for ($page = 0; $page < 50 && $url; $page++) {
+            $response = $this->getResponse($url);
+            $all      = array_merge($all, $response->json() ?? []);
+            $url      = $this->nextPageUrl($response->header('Link'));
+        }
+
+        return $all;
+    }
+
+    /**
+     * Extrae la URL de la siguiente página desde la cabecera Link de Meraki.
+     *
+     * Formato: `<https://...>; rel=first, <https://...>; rel=next, ...`
+     *
+     * @param  string|null $linkHeader Valor de la cabecera Link
+     * @return string|null             URL absoluta de la siguiente página, o null si no hay más
+     */
+    protected function nextPageUrl(?string $linkHeader): ?string
+    {
+        if ($linkHeader && preg_match('/<([^>]+)>;\s*rel="?next"?/', $linkHeader, $m)) {
+            return $m[1];
+        }
+        return null;
+    }
+
+    /**
+     * Ejecuta la petición HTTP con reintentos automáticos.
+     *
+     * Política de reintentos (hasta 3 intentos):
+     *  - 429 (rate limit de Meraki: ~10 req/s por org) → espera el Retry-After indicado.
+     *  - 5xx / errores de conexión → backoff incremental (500ms, 1000ms).
+     *  - 4xx distintos de 429 fallan de inmediato (no tiene sentido reintentar).
+     *
+     * @param  string $pathOrUrl Ruta relativa al baseUrl o URL absoluta (paginación)
+     * @return Response          Respuesta exitosa
+     * @throws Exception         si la API Key no está configurada o la API retorna error
+     */
+    protected function getResponse(string $pathOrUrl): Response
+    {
         if (empty($this->apiKey)) {
             throw new Exception('Meraki API Key no configurada. Agrega MERAKI_API_KEY en .env');
         }
 
-        $response = Http::timeout(15)
+        $url = str_starts_with($pathOrUrl, 'http') ? $pathOrUrl : "{$this->baseUrl}{$pathOrUrl}";
+
+        $response = Http::connectTimeout(5)
+            ->timeout(20)
             ->withHeaders(['X-Cisco-Meraki-API-Key' => $this->apiKey])
-            ->get("{$this->baseUrl}{$path}");
+            ->retry(
+                3,
+                function (int $attempt, Exception $e) {
+                    if ($e instanceof RequestException && $e->response->status() === 429) {
+                        return max(1000, (int) $e->response->header('Retry-After') * 1000);
+                    }
+                    return $attempt * 500;
+                },
+                function (Exception $e) {
+                    if ($e instanceof ConnectionException) {
+                        return true;
+                    }
+                    return $e instanceof RequestException
+                        && in_array($e->response->status(), [429, 500, 502, 503, 504], true);
+                },
+                throw: false,
+            )
+            ->get($url);
 
         if ($response->failed()) {
-            throw new Exception("Meraki API [{$path}]: HTTP {$response->status()} — {$response->body()}");
+            throw new Exception("Meraki API [{$pathOrUrl}]: HTTP {$response->status()} — {$response->body()}");
         }
 
-        return $response->json() ?? [];
+        return $response;
     }
 }

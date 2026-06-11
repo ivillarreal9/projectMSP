@@ -4,7 +4,12 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Services\MerakiService;
+use App\Exports\MerakiExport;
+use Carbon\Carbon;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
+use Maatwebsite\Excel\Facades\Excel;
 use Exception;
 
 /**
@@ -118,8 +123,7 @@ class MerakiController extends Controller
             $licPrefix = $this->rawModelPrefix($model);
 
             // Fetch license pool for this model prefix and attach to devices
-            $organizations = $this->meraki->getOrganizations();
-            $orgIds        = collect($devices)->pluck('_orgId')->unique()->filter()->values();
+            $orgIds   = collect($devices)->pluck('_orgId')->unique()->filter()->values();
             $licenses      = collect();
 
             foreach ($orgIds as $orgId) {
@@ -241,11 +245,11 @@ class MerakiController extends Controller
 
             // Networks enriched with device counts
             $devicesByNetwork = collect($devices)->groupBy(fn ($d) => $d['networkId'] ?? '');
-            $networks = array_map(function ($net) use ($devicesByNetwork, $statusMap) {
+            $networks = array_map(function ($net) use ($devicesByNetwork) {
                 $netDevices = $devicesByNetwork->get($net['id'], collect());
-                $net['_device_count']  = $netDevices->count();
-                $net['_online_count']  = $netDevices->filter(fn ($d) =>
-                    ($statusMap->get($d['serial'] ?? []) ?? [])['status'] ?? '' === 'online'
+                $net['_device_count'] = $netDevices->count();
+                $net['_online_count'] = $netDevices->filter(fn ($d) =>
+                    ($d['_status']['status'] ?? '') === 'online'
                 )->count();
                 return $net;
             }, $networks);
@@ -360,14 +364,7 @@ class MerakiController extends Controller
             $organizations = $this->meraki->getOrganizations();
 
             // Build serial → model map from cached devices
-            $allDevices  = $this->meraki->getAllDevicesWithStatuses();
-            $serialToModel = collect($allDevices)->keyBy('serial')->map(fn ($d) => [
-                'model'   => $d['model'] ?? 'Unknown',
-                'name'    => $d['name'] ?? $d['serial'] ?? '—',
-                'orgName' => $d['_orgName'] ?? '—',
-                'orgId'   => $d['_orgId'] ?? null,
-                'status'  => $d['_status']['status'] ?? 'unknown',
-            ]);
+            $serialToModel = $this->deviceMapBySerial();
 
             // Fetch all licenses from all orgs and attach model info
             $byModel = [];
@@ -443,23 +440,8 @@ class MerakiController extends Controller
     public function alerts()
     {
         try {
-            $allDevices = $this->meraki->getAllDevicesWithStatuses();
-
-            $problematic = array_values(array_filter(
-                $allDevices,
-                fn ($d) => in_array($d['_status']['status'] ?? '', ['offline', 'alerting'])
-            ));
-
-            usort($problematic, function ($a, $b) {
-                $order = ['alerting' => 0, 'offline' => 1];
-                $sa = $order[$a['_status']['status'] ?? 'offline'] ?? 1;
-                $sb = $order[$b['_status']['status'] ?? 'offline'] ?? 1;
-                if ($sa !== $sb) return $sa - $sb;
-
-                $la = $a['_status']['lastReportedAt'] ?? '';
-                $lb = $b['_status']['lastReportedAt'] ?? '';
-                return strcmp($la, $lb); // más antiguos primero
-            });
+            $allDevices  = $this->meraki->getAllDevicesWithStatuses();
+            $problematic = $this->problematicDevices($allDevices);
 
             $summary = [
                 'total'    => count($allDevices),
@@ -481,24 +463,51 @@ class MerakiController extends Controller
     // ─── Exports ──────────────────────────────────────────────────────────────
 
     /**
-     * Exporta todos los dispositivos Meraki a un archivo CSV con BOM UTF-8.
+     * Exporta los dispositivos Meraki a un archivo Excel (.xlsx).
      *
      * Incluye: nombre, modelo, serial, estado, IP LAN, organización y última conexión.
      * La fecha se formatea en d/m/Y H:i para legibilidad en español.
-     * El BOM UTF-8 (0xEF 0xBB 0xBF) garantiza que Excel lo abra correctamente en Windows.
      *
-     * @return \Symfony\Component\HttpFoundation\StreamedResponse  Descarga CSV
+     * Acepta query params opcionales para filtrar (combinables), de modo que un
+     * único endpoint sirve a todas las vistas del módulo:
+     *  - `org`     → solo dispositivos de esa organización (vista de organización)
+     *  - `model`   → solo dispositivos de ese modelo exacto (vista de modelo)
+     *  - `network` → solo dispositivos de esa red (vista de red)
+     * Sin parámetros, exporta el inventario completo de todas las organizaciones.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Symfony\Component\HttpFoundation\BinaryFileResponse  Descarga .xlsx
      */
-    public function exportDevices()
+    public function exportDevices(Request $request)
     {
         $allDevices = $this->meraki->getAllDevicesWithStatuses();
+
+        $orgId    = $request->query('org');
+        $model    = $request->query('model');
+        $network  = $request->query('network');
+        $tag      = null; // sufijo descriptivo para el nombre del archivo
+
+        if ($orgId) {
+            $allDevices = array_values(array_filter($allDevices, fn ($d) => ($d['_orgId'] ?? null) === $orgId));
+            $tag        = collect($allDevices)->first()['_orgName'] ?? $orgId;
+        }
+        if ($model) {
+            $allDevices = array_values(array_filter($allDevices, fn ($d) => ($d['model'] ?? null) === $model));
+            $tag        = $model;
+        }
+        if ($network) {
+            $allDevices = array_values(array_filter($allDevices, fn ($d) => ($d['networkId'] ?? null) === $network));
+            try {
+                $tag = $this->meraki->getNetwork($network)['name'] ?? $network;
+            } catch (Exception $e) { $tag = $network; }
+        }
 
         $headers = ['Nombre', 'Modelo', 'Serial', 'Estado', 'IP LAN', 'Organización', 'Último reporte'];
         $rows    = array_map(function ($d) {
             $lastRaw = $d['_status']['lastReportedAt'] ?? null;
             try {
-                $last = $lastRaw ? \Carbon\Carbon::parse($lastRaw)->format('d/m/Y H:i') : '—';
-            } catch (\Exception $e) { $last = '—'; }
+                $last = $lastRaw ? Carbon::parse($lastRaw)->format('d/m/Y H:i') : '—';
+            } catch (Exception $e) { $last = '—'; }
 
             return [
                 $d['name']                    ?? $d['serial'] ?? '—',
@@ -511,27 +520,25 @@ class MerakiController extends Controller
             ];
         }, $allDevices);
 
-        return $this->streamCsv('meraki-dispositivos-' . now()->format('Y-m-d'), $headers, $rows);
+        $slug     = $tag ? '-' . Str::slug($tag) : '';
+        $filename = 'meraki-dispositivos' . $slug . '-' . now()->format('Y-m-d') . '.xlsx';
+
+        return Excel::download(new MerakiExport($headers, $rows, 'Dispositivos'), $filename);
     }
 
     /**
-     * Exporta todas las licencias Meraki de todas las organizaciones a CSV con BOM UTF-8.
+     * Exporta todas las licencias Meraki de todas las organizaciones a Excel (.xlsx).
      *
      * Incluye: modelo del dispositivo, nombre, serial, tipo de licencia, estado,
      * fecha de vencimiento y organización. Los errores por organización se loguean
      * como warning sin detener la exportación de las demás organizaciones.
      *
-     * @return \Symfony\Component\HttpFoundation\StreamedResponse  Descarga CSV
+     * @return \Symfony\Component\HttpFoundation\BinaryFileResponse  Descarga .xlsx
      */
     public function exportLicenses()
     {
         $organizations = $this->meraki->getOrganizations();
-        $allDevices    = $this->meraki->getAllDevicesWithStatuses();
-        $serialToModel = collect($allDevices)->keyBy('serial')->map(fn ($d) => [
-            'model'   => $d['model']   ?? '—',
-            'name'    => $d['name']    ?? $d['serial'] ?? '—',
-            'orgName' => $d['_orgName'] ?? '—',
-        ]);
+        $serialToModel = $this->deviceMapBySerial();
 
         $headers = ['Modelo', 'Dispositivo', 'Serial', 'Tipo licencia', 'Estado', 'Vencimiento', 'Organización'];
         $rows    = [];
@@ -543,9 +550,9 @@ class MerakiController extends Controller
                     $device = $serial ? $serialToModel->get($serial) : null;
                     try {
                         $exp = !empty($lic['expirationDate'])
-                            ? \Carbon\Carbon::parse($lic['expirationDate'])->format('d/m/Y')
+                            ? Carbon::parse($lic['expirationDate'])->format('d/m/Y')
                             : '—';
-                    } catch (\Exception $e) { $exp = '—'; }
+                    } catch (Exception $e) { $exp = '—'; }
 
                     $rows[] = [
                         $device['model']   ?? 'Sin asignar',
@@ -562,34 +569,48 @@ class MerakiController extends Controller
             }
         }
 
-        return $this->streamCsv('meraki-licencias-' . now()->format('Y-m-d'), $headers, $rows);
+        $filename = 'meraki-licencias-' . now()->format('Y-m-d') . '.xlsx';
+
+        return Excel::download(new MerakiExport($headers, $rows, 'Licencias'), $filename);
     }
 
     /**
-     * Genera una respuesta CSV con streaming para evitar cargar todo el archivo en memoria.
+     * Exporta a Excel (.xlsx) los dispositivos con problemas (offline o alerting)
+     * de todas las organizaciones.
      *
-     * Escribe directamente a php://output mediante fputcsv para manejar eficientemente
-     * grandes volúmenes de datos. Incluye BOM UTF-8 al inicio para compatibilidad con Excel.
+     * Incluye: estado, dispositivo, modelo, serial, organización, último reporte
+     * y horas transcurridas sin reportar (útil para priorizar la atención).
+     * Reutiliza el mismo ordenamiento por severidad que la central de alertas.
      *
-     * @param  string  $filename  Nombre del archivo sin extensión (se agrega .csv)
-     * @param  array   $headers   Array de strings con los encabezados de columna
-     * @param  array   $rows      Array de arrays con los datos de cada fila
-     * @return \Symfony\Component\HttpFoundation\StreamedResponse
+     * @return \Symfony\Component\HttpFoundation\BinaryFileResponse  Descarga .xlsx
      */
-    private function streamCsv(string $filename, array $headers, array $rows): \Symfony\Component\HttpFoundation\StreamedResponse
+    public function exportAlerts()
     {
-        return response()->streamDownload(function () use ($headers, $rows) {
-            $out = fopen('php://output', 'w');
-            fprintf($out, chr(0xEF) . chr(0xBB) . chr(0xBF)); // BOM UTF-8 para Excel
-            fputcsv($out, $headers);
-            foreach ($rows as $row) {
-                fputcsv($out, $row);
-            }
-            fclose($out);
-        }, $filename . '.csv', [
-            'Content-Type'        => 'text/csv; charset=UTF-8',
-            'Content-Disposition' => "attachment; filename=\"{$filename}.csv\"",
-        ]);
+        $problematic = $this->problematicDevices($this->meraki->getAllDevicesWithStatuses());
+
+        $headers = ['Estado', 'Dispositivo', 'Modelo', 'Serial', 'Organización', 'Último reporte', 'Horas sin reportar'];
+        $rows    = array_map(function ($d) {
+            $lastRaw = $d['_status']['lastReportedAt'] ?? null;
+            try {
+                $lastDt = $lastRaw ? Carbon::parse($lastRaw) : null;
+                $last   = $lastDt ? $lastDt->format('d/m/Y H:i') : '—';
+                $hours  = $lastDt ? (int) round($lastDt->diffInHours(now())) : '—';
+            } catch (Exception $e) { $last = '—'; $hours = '—'; }
+
+            return [
+                ucfirst($d['_status']['status'] ?? '—'),
+                $d['name']     ?? $d['serial'] ?? '—',
+                $d['model']    ?? '—',
+                $d['serial']   ?? '—',
+                $d['_orgName'] ?? '—',
+                $last,
+                $hours,
+            ];
+        }, $problematic);
+
+        $filename = 'meraki-alertas-' . now()->format('Y-m-d') . '.xlsx';
+
+        return Excel::download(new MerakiExport($headers, $rows, 'Alertas'), $filename);
     }
 
     // ─── Cache flush ──────────────────────────────────────────────────────────
@@ -638,6 +659,59 @@ class MerakiController extends Controller
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
+
+    /**
+     * Filtra los dispositivos con problemas (offline o alerting) y los ordena
+     * por severidad: alerting primero, luego offline; dentro de cada estado,
+     * los más antiguos sin reportar van primero.
+     *
+     * Compartido entre la central de alertas y su exportación a Excel.
+     *
+     * @param  array  $devices  Dispositivos con campo `_status` adjunto
+     * @return array            Dispositivos problemáticos ordenados por severidad
+     */
+    protected function problematicDevices(array $devices): array
+    {
+        $problematic = array_values(array_filter(
+            $devices,
+            fn ($d) => in_array($d['_status']['status'] ?? '', ['offline', 'alerting'], true)
+        ));
+
+        usort($problematic, function ($a, $b) {
+            $order = ['alerting' => 0, 'offline' => 1];
+            $sa = $order[$a['_status']['status'] ?? 'offline'] ?? 1;
+            $sb = $order[$b['_status']['status'] ?? 'offline'] ?? 1;
+            if ($sa !== $sb) return $sa - $sb;
+
+            return strcmp(
+                $a['_status']['lastReportedAt'] ?? '',
+                $b['_status']['lastReportedAt'] ?? ''
+            ); // más antiguos primero
+        });
+
+        return $problematic;
+    }
+
+    /**
+     * Construye un mapa serial → datos del dispositivo a partir del inventario global,
+     * para enriquecer licencias con la información del equipo asignado.
+     *
+     * Compartido entre la vista de licencias y su exportación a Excel.
+     *
+     * @return \Illuminate\Support\Collection  serial → {model, name, orgName, orgId, status}
+     */
+    protected function deviceMapBySerial(): \Illuminate\Support\Collection
+    {
+        return collect($this->meraki->getAllDevicesWithStatuses())
+            ->keyBy('serial')
+            ->map(fn ($d) => [
+                'model'   => $d['model'] ?? 'Unknown',
+                'name'    => $d['name'] ?? $d['serial'] ?? '—',
+                'orgName' => $d['_orgName'] ?? '—',
+                'orgId'   => $d['_orgId'] ?? null,
+                'status'  => $d['_status']['status'] ?? 'unknown',
+            ]);
+    }
 
     /**
      * Deriva el prefijo de categoría de visualización a partir del nombre del modelo.

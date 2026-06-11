@@ -94,10 +94,10 @@
                     @php
                         $cf          = $ticket['customFields'] ?? [];
                         $completedDt = !empty($ticket['CompletedDate'])
-                            ? \Carbon\Carbon::parse($ticket['CompletedDate'])->subHours(5)
+                            ? rescue(fn () => \Carbon\Carbon::parse($ticket['CompletedDate'])->subHours(5), null, false)
                             : null;
                         $createdDt   = !empty($ticket['CreatedDate'])
-                            ? \Carbon\Carbon::parse($ticket['CreatedDate'])->subHours(5)
+                            ? rescue(fn () => \Carbon\Carbon::parse($ticket['CreatedDate'])->subHours(5), null, false)
                             : null;
                     @endphp
                     <tr>

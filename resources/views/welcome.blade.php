@@ -63,16 +63,17 @@
             <div class="mt-5 pt-5 border-t border-gray-100 dark:border-gray-800 space-y-2.5">
                 <p class="text-xs text-gray-400 dark:text-gray-600 uppercase tracking-widest mb-3">Módulos</p>
 
+                {{-- Clases completas: el JIT de Tailwind no genera clases compuestas dinámicamente --}}
                 @foreach([
-                    ['color' => 'indigo', 'label' => 'Dashboard de Ventas'],
-                    ['color' => 'purple', 'label' => 'API MSP'],
-                    ['color' => 'emerald','label' => 'META 2 — Telefonía'],
-                    ['color' => 'sky',    'label' => 'Encuestas de Satisfacción'],
-                    ['color' => 'amber',  'label' => 'Gestión de Usuarios'],
-                    ['color' => 'orange', 'label' => 'Reportes Masivos'],
+                    ['color' => 'bg-indigo-500',  'label' => 'Dashboard de Ventas'],
+                    ['color' => 'bg-purple-500',  'label' => 'API MSP'],
+                    ['color' => 'bg-emerald-500', 'label' => 'META 2 — Telefonía'],
+                    ['color' => 'bg-sky-500',     'label' => 'Encuestas de Satisfacción'],
+                    ['color' => 'bg-amber-500',   'label' => 'Gestión de Usuarios'],
+                    ['color' => 'bg-orange-500',  'label' => 'Reportes Masivos'],
                 ] as $mod)
                 <div class="flex items-center gap-2.5">
-                    <span class="w-1.5 h-1.5 rounded-full bg-{{ $mod['color'] }}-500"></span>
+                    <span class="w-1.5 h-1.5 rounded-full {{ $mod['color'] }}"></span>
                     <span class="text-xs text-gray-500 dark:text-gray-400">{{ $mod['label'] }}</span>
                 </div>
                 @endforeach

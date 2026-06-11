@@ -224,7 +224,7 @@
                                 <td class="px-6 py-3">
                                     <p class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ $opp['name'] ?? '—' }}</p>
                                     @if(!empty($opp['date_deadline']) && $opp['date_deadline'] !== false)
-                                        <p class="text-xs text-gray-400 mt-0.5">Cierre: {{ \Carbon\Carbon::parse($opp['date_deadline'])->format('d/m/Y') }}</p>
+                                        <p class="text-xs text-gray-400 mt-0.5">Cierre: {{ rescue(fn () => \Carbon\Carbon::parse($opp['date_deadline'])->format('d/m/Y'), '—', false) }}</p>
                                     @endif
                                 </td>
                                 <td class="px-6 py-3 text-sm text-gray-600 dark:text-gray-300">{{ $partnerName }}</td>
@@ -273,7 +273,7 @@
                                     ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-500'
                                     : 'bg-gray-100 dark:bg-gray-700 text-gray-400'));
                         $isOverdue = !empty($act['date_deadline']) && $act['date_deadline'] !== false
-                                     && \Carbon\Carbon::parse($act['date_deadline'])->isPast();
+                                     && rescue(fn () => \Carbon\Carbon::parse($act['date_deadline'])->isPast(), false, false);
                     @endphp
                     <li class="px-6 py-4 flex items-start gap-4">
                         <span class="flex-shrink-0 w-8 h-8 rounded-full {{ $iconBg }} flex items-center justify-center mt-0.5">
@@ -296,7 +296,7 @@
                                 <span class="text-xs text-gray-400">{{ $actType }}</span>
                                 @if(!empty($act['date_deadline']) && $act['date_deadline'] !== false)
                                     <span class="text-xs {{ $isOverdue ? 'text-red-500 font-medium' : 'text-gray-400' }}">
-                                        {{ \Carbon\Carbon::parse($act['date_deadline'])->format('d/m/Y') }}
+                                        {{ rescue(fn () => \Carbon\Carbon::parse($act['date_deadline'])->format('d/m/Y'), '—', false) }}
                                         @if($isOverdue) · vencida @endif
                                     </span>
                                 @endif

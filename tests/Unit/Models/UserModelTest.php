@@ -24,20 +24,29 @@ class UserModelTest extends TestCase
     // =========================================================================
     // HELPERS
     // =========================================================================
+    // Los roles son dinámicos: isAdmin/hasRole/etc. leen roleModel->slug,
+    // por lo que cada helper crea el Role en BD y asigna role_id.
+
+    private function makeUserWithRole(string $slug, array $modulos = []): User
+    {
+        $role = Role::factory()->create(['slug' => $slug, 'modulos' => $modulos]);
+
+        return User::factory()->create(['role_id' => $role->id]);
+    }
 
     private function makeAdmin(): User
     {
-        return User::factory()->create(['role' => 'admin']);
+        return $this->makeUserWithRole('admin', array_keys(config('modules')));
     }
 
     private function makeEditor(): User
     {
-        return User::factory()->create(['role' => 'editor']);
+        return $this->makeUserWithRole('editor');
     }
 
     private function makeVentas(): User
     {
-        return User::factory()->create(['role' => 'ventas']);
+        return $this->makeUserWithRole('ventas');
     }
 
     // =========================================================================
@@ -117,7 +126,7 @@ class UserModelTest extends TestCase
     /** @test */
     public function hasRole_compara_el_rol_correctamente(): void
     {
-        $user = User::factory()->create(['role' => 'ventas']);
+        $user = $this->makeVentas();
 
         $this->assertTrue($user->hasRole('ventas'));
         $this->assertFalse($user->hasRole('admin'));
@@ -127,7 +136,7 @@ class UserModelTest extends TestCase
     /** @test */
     public function hasRole_es_sensible_a_mayusculas(): void
     {
-        $user = User::factory()->create(['role' => 'admin']);
+        $user = $this->makeAdmin();
 
         // El rol 'Admin' (con mayúscula) NO debe coincidir con 'admin'
         $this->assertFalse($user->hasRole('Admin'));
@@ -171,7 +180,7 @@ class UserModelTest extends TestCase
     /** @test */
     public function usuario_sin_role_model_no_puede_acceder_a_modulos(): void
     {
-        $user = User::factory()->create(['role' => 'editor', 'role_id' => null]);
+        $user = User::factory()->create(['role_id' => null]);
 
         $this->assertFalse($user->canAccessModule('msp_reports'));
         $this->assertFalse($user->canAccessModule('sales'));
@@ -186,7 +195,6 @@ class UserModelTest extends TestCase
         ]);
 
         $user = User::factory()->create([
-            'role'    => 'editor',
             'role_id' => $role->id,
         ]);
 
@@ -198,7 +206,7 @@ class UserModelTest extends TestCase
     /** @test */
     public function modulosAccesibles_retorna_array_vacio_si_no_tiene_role_model(): void
     {
-        $user = User::factory()->create(['role' => 'editor', 'role_id' => null]);
+        $user = User::factory()->create(['role_id' => null]);
 
         $modulos = $user->modulosAccesibles();
 
@@ -220,8 +228,11 @@ class UserModelTest extends TestCase
         $this->assertContains('name', $fillable);
         $this->assertContains('email', $fillable);
         $this->assertContains('password', $fillable);
-        $this->assertContains('role', $fillable);
         $this->assertContains('role_id', $fillable);
+
+        // `role` NO es fillable: es una columna caché que sincroniza el
+        // observer del modelo a partir de roleModel->slug
+        $this->assertNotContains('role', $fillable);
     }
 
     /** @test */
