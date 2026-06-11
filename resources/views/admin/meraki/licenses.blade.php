@@ -26,7 +26,7 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                               d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
                     </svg>
-                    Exportar
+                    Exportar Excel
                 </a>
 
                 <form method="POST" action="{{ route('admin.meraki.refresh.all') }}">
@@ -152,11 +152,38 @@
             </div>
 
             {{-- ─── Model cards + detail panel ──────────────────────────────────────────── --}}
-            <div x-data="licencias()" class="space-y-6">
+            <div x-data="licencias()" x-init="applyFilter()" x-effect="search; filter; applyFilter()" class="space-y-6">
 
-                <div class="flex items-center justify-between">
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <h3 class="text-lg font-bold text-gray-800 dark:text-gray-100">Licencias por Modelo</h3>
-                    <p class="text-xs text-gray-400 font-medium uppercase tracking-widest">{{ count($byModel) }} modelos</p>
+                    <p class="text-xs text-gray-400 font-medium uppercase tracking-widest">
+                        <span x-text="shown"></span> de {{ count($byModel) }} modelos
+                    </p>
+                </div>
+
+                {{-- Filtros --}}
+                <div class="flex flex-col lg:flex-row lg:items-center gap-3">
+                    <div class="relative flex-1 max-w-sm">
+                        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none"
+                             fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                        </svg>
+                        <input type="text" x-model.debounce.150ms="search" placeholder="Buscar modelo..."
+                               class="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700
+                                      bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200
+                                      focus:outline-none focus:ring-1 focus:ring-teal-400 placeholder-gray-400">
+                    </div>
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                        @foreach(['all' => 'Todas', 'active' => 'Con activas', 'unused' => 'Con sin usar', 'expired' => 'Con vencidas'] as $val => $lbl)
+                        <button type="button" @click="filter = '{{ $val }}'"
+                                :class="filter === '{{ $val }}' ? 'bg-teal-500 text-white border-teal-500' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700'"
+                                class="px-3 py-1.5 text-xs font-semibold rounded-lg border transition">{{ $lbl }}</button>
+                        @endforeach
+                    </div>
+                </div>
+
+                <div class="hidden py-12 text-center" :class="{ '!block': shown === 0 }">
+                    <p class="text-sm text-gray-400">Ningún modelo coincide con el filtro.</p>
                 </div>
 
                 {{-- Cards grid --}}
@@ -172,11 +199,15 @@
                         $barColor  = $pct === 100 ? 'bg-green-400' : ($pct >= 70 ? 'bg-yellow-400' : 'bg-red-400');
                         $pctColor  = $pct === 100 ? 'text-green-600 dark:text-green-400' : ($pct >= 70 ? 'text-yellow-600 dark:text-yellow-400' : 'text-red-600 dark:text-red-400');
                         $modelKey  = Str::slug($model);
-                        $licenses_json = json_encode($group['licenses']);
                     @endphp
 
                     <button
                         type="button"
+                        data-lic-card
+                        data-search-text="{{ strtolower($model . ' ' . ($group['prefix'] ?? '')) }}"
+                        data-has-expired="{{ $group['expired'] > 0 ? '1' : '0' }}"
+                        data-has-unused="{{ $group['unused'] > 0 ? '1' : '0' }}"
+                        data-has-active="{{ $group['active'] > 0 ? '1' : '0' }}"
                         @click="toggle('{{ $modelKey }}')"
                         :class="active === '{{ $modelKey }}' ? 'ring-2 ring-teal-400 border-teal-400 dark:border-teal-400' : '{{ $cardBorder }}'"
                         class="group text-left bg-white dark:bg-gray-800 border rounded-2xl p-5 shadow-sm
@@ -527,6 +558,9 @@
     function licencias() {
         return {
             active: null,
+            search: '',
+            filter: 'all',
+            shown: {{ count($byModel) }},
             toggle(key) {
                 this.active = this.active === key ? null : key;
                 this.$nextTick(() => {
@@ -535,6 +569,21 @@
                         if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                     }
                 });
+            },
+            applyFilter() {
+                const q = this.search.toLowerCase();
+                let count = 0;
+                this.$root.querySelectorAll('[data-lic-card]').forEach(c => {
+                    const matchSearch = !q || (c.dataset.searchText || '').includes(q);
+                    const matchFilter = this.filter === 'all'
+                        || (this.filter === 'expired' && c.dataset.hasExpired === '1')
+                        || (this.filter === 'unused'  && c.dataset.hasUnused === '1')
+                        || (this.filter === 'active'  && c.dataset.hasActive === '1');
+                    const visible = matchSearch && matchFilter;
+                    c.style.display = visible ? '' : 'none';
+                    if (visible) count++;
+                });
+                this.shown = count;
             }
         }
     }
@@ -639,7 +688,7 @@
                         ticks: {
                             color: gray400,
                             font: { size: 9, weight: 'bold' },
-                            stepSize: 1
+                            precision: 0
                         },
                         grid: {
                             color: isDark ? '#374151' : '#f3f4f6',

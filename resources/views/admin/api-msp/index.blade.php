@@ -550,6 +550,7 @@
                 headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
                 body: JSON.stringify({ message, cache_key: currentCacheKey }),
             });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
             const data = await res.json();
             removeTyping(typingId);
             appendMessage('ai', data.reply || 'Sin respuesta.');

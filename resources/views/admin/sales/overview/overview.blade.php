@@ -209,7 +209,7 @@
             </div>
 
             <div class="grid grid-cols-2 gap-6">
-                @foreach([['chartTotal','skel-total','Total comisiones por vendedor'],['chartOrders','skel-orders','Órdenes por vendedor']] as [$canvasId,$skelId,$title])
+                @foreach([['chartTotal','skel-total','Total ventas por vendedor'],['chartOrders','skel-orders','Órdenes por vendedor']] as [$canvasId,$skelId,$title])
                 <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-6">
                     <div class="mb-4">
                         <h2 class="text-sm font-semibold text-gray-800 dark:text-gray-100">{{ $title }}</h2>
@@ -242,7 +242,8 @@
     // ── Cache & auto-rotate ───────────────────────────────────
     const ROTATE_MODES    = ['mes', 'mes_actual', 'acumulado'];
     const ROTATE_INTERVAL = 5 * 60 * 1000; // 5 minutos en ms
-    const dataCache       = {};
+    const CACHE_TTL       = ROTATE_INTERVAL; // tras un ciclo completo se refresca contra el servidor
+    const dataCache       = {}; // mode → { data, at } | { promise }
     let   rotateIndex     = 0;
     let   rotateTimer     = null;
     let   progressTimer   = null;
@@ -255,6 +256,8 @@
         if (n >= 1e3) return '$' + (n/1e3).toFixed(2) + 'k';
         return '$' + Number(n).toFixed(2);
     };
+    // Escapa texto interpolado en HTML (nombres de vendedores vienen de Odoo)
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
     // ── Helpers ───────────────────────────────────────────────
     function showCanvas(canvasId, skelId) {
@@ -272,8 +275,8 @@
 
     // ── Avatar ────────────────────────────────────────────────
     function avatarHtml(e, sz, fontSize, idx) {
-        if (e.image) return `<img src="${e.image}" style="width:${sz}px;height:${sz}px;border-radius:50%;object-fit:cover;display:block;" alt="${e.name}">`;
-        return `<div style="width:${sz}px;height:${sz}px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:${fontSize};font-weight:500;background:${palette[idx % palette.length]}">${e.initials}</div>`;
+        if (e.image) return `<img src="${esc(e.image)}" style="width:${sz}px;height:${sz}px;border-radius:50%;object-fit:cover;display:block;" alt="${esc(e.name)}">`;
+        return `<div style="width:${sz}px;height:${sz}px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:${fontSize};font-weight:500;background:${palette[idx % palette.length]}">${esc(e.initials)}</div>`;
     }
 
     // ── Podio ─────────────────────────────────────────────────
@@ -303,7 +306,7 @@
                     ${isFirst ? `<span style="position:absolute;top:-18px;left:50%;transform:translateX(-50%);font-size:16px;color:${accentTxt}">★</span>` : ''}
                     ${avatarHtml(e, sz, fs, idx)}
                 </div>
-                <div style="font-size:12px;font-weight:500;text-align:center;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.short}</div>
+                <div style="font-size:12px;font-weight:500;text-align:center;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(e.short)}</div>
                 <div style="font-size:${isFirst?'17px':'13px'};font-weight:600;color:${pc.txt};text-align:center">${fmtFull(e.revenue)}</div>
                 <div style="font-size:10px;color:#9ca3af;text-align:center">${e.cantidad} orden${e.cantidad!==1?'es':''}</div>
                 <div style="width:100%;border-radius:5px 5px 0 0;background:${pc.bg};height:${pc.ht}px;display:flex;align-items:flex-end;justify-content:center;padding-bottom:6px">
@@ -320,7 +323,7 @@
                 html += `<div style="display:flex;align-items:center;gap:8px">
                     <span style="font-size:10px;color:#9ca3af;width:16px;text-align:right;flex-shrink:0">${i+1}</span>
                     ${avatarHtml(e, 24, '9px', i)}
-                    <span style="font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${e.short}</span>
+                    <span style="font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${esc(e.short)}</span>
                     <div style="flex:2;background:${isDark?'#374151':'#f3f4f6'};border-radius:3px;overflow:hidden;height:4px">
                         <div style="width:${pct}%;height:4px;background:${accent};border-radius:3px;transition:width .4s"></div>
                     </div>
@@ -343,7 +346,7 @@
             ${kpiCard('Total OTF', fmtFull(totalOtf), 'One-Time Fee · '+periodoComisiones, 'orange', `<path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/>`)}
             ${kpiCard('Total MRC', fmtFull(totalMrc), 'Monthly Recurring · '+periodoComisiones, 'teal', `<path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>`)}
             ${kpiCard('Total facturado', fmtFull(totalComis), 'OTF + MRC · '+periodoComisiones, 'violet', `<path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>`)}
-            ${kpiCard('Órdenes', cantidadOrd, 'Con comisión registrada · '+periodoComisiones, 'blue', `<path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>`, true)}
+            ${kpiCard('Órdenes', cantidadOrd, 'Con venta registrada · '+periodoComisiones, 'blue', `<path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>`, true)}
         `;
 
         document.getElementById('kpi-total-otf-header').textContent = fmtFull(totalOtf);
@@ -553,13 +556,32 @@
         if (lbl) lbl.textContent = Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0');
     }
 
-    // ── Fetch con cache ───────────────────────────────────────
-    function loadData() {
-        if (dataCache[currentMode]) {
-            renderAll(dataCache[currentMode]);
-            return;
-        }
+    // ── Fetch con cache (TTL + deduplicación de peticiones en vuelo) ──
+    function fetchMode(mode) {
+        const cached = dataCache[mode];
+        if (cached?.promise) return cached.promise; // ya hay una petición en curso
+        if (cached?.data && (Date.now() - cached.at) < CACHE_TTL) return Promise.resolve(cached.data);
 
+        const promise = fetch(`{{ route('admin.sales.overview.commissions') }}?mode=${mode}`)
+            .then(r => {
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                return r.json();
+            })
+            .then(data => {
+                dataCache[mode] = { data, at: Date.now() };
+                return data;
+            })
+            .catch(err => {
+                // conserva los datos viejos (si existían) para no dejar el tablero en blanco
+                dataCache[mode] = cached?.data ? { data: cached.data, at: cached.at } : undefined;
+                throw err;
+            });
+
+        dataCache[mode] = { ...cached, promise };
+        return promise;
+    }
+
+    function renderKpiSkeleton() {
         document.getElementById('kpi-cards').innerHTML = `
             ${[0,1,2,3].map(() => `
             <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex flex-col gap-3 animate-pulse">
@@ -571,16 +593,22 @@
                 <div class="h-3 w-28 bg-gray-200 dark:bg-gray-700 rounded"></div>
             </div>`).join('')}
         `;
+    }
 
-        fetch(`{{ route('admin.sales.overview.commissions') }}?mode=${currentMode}`)
-            .then(r => r.json())
-            .then(data => {
-                dataCache[currentMode] = data;
-                renderAll(data);
-            })
+    function loadData() {
+        const mode  = currentMode;
+        const stale = dataCache[mode]?.data;
+
+        // Pinta de inmediato lo que haya (aunque esté caducado) y refresca por detrás
+        if (stale) renderAll(stale); else renderKpiSkeleton();
+
+        fetchMode(mode)
+            .then(data => { if (currentMode === mode && data !== stale) renderAll(data); })
             .catch(() => {
-                document.getElementById('kpi-cards').innerHTML =
-                    '<p class="col-span-4 text-center text-sm text-red-500 py-8">Error cargando datos. Recarga la página.</p>';
+                if (currentMode === mode && !stale) {
+                    document.getElementById('kpi-cards').innerHTML =
+                        '<p class="col-span-4 text-center text-sm text-red-500 py-8">Error cargando datos. Recarga la página.</p>';
+                }
             });
     }
 
@@ -591,12 +619,7 @@
 
     // Precarga los otros dos modos en segundo plano para que la rotación sea instantánea
     setTimeout(() => {
-        ['mes_actual', 'acumulado'].forEach(mode => {
-            fetch(`{{ route('admin.sales.overview.commissions') }}?mode=${mode}`)
-                .then(r => r.json())
-                .then(data => { dataCache[mode] = data; })
-                .catch(() => {});
-        });
+        ['mes_actual', 'acumulado'].forEach(mode => fetchMode(mode).catch(() => {}));
     }, 1500);
     </script>
 </x-app-layout>

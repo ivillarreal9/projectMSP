@@ -5,11 +5,12 @@ namespace Tests\Feature\Admin;
 use App\Models\MspClient;
 use App\Models\MspReport;
 use App\Models\MspUploadBatch;
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
-use Maatwebsite\Excel\Facades\Excel;
 use Tests\TestCase;
 
 /**
@@ -36,8 +37,24 @@ class MspReportControllerTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->admin  = User::factory()->create(['role' => 'admin']);
-        $this->editor = User::factory()->create(['role' => 'editor']);
+
+        // Roles dinámicos: el acceso por módulo se resuelve vía roleModel->modulos
+        $adminRole  = Role::factory()->create(['slug' => 'admin',  'modulos' => array_keys(config('modules'))]);
+        $editorRole = Role::factory()->create(['slug' => 'editor', 'modulos' => []]);
+
+        // Con 2FA confirmado + sesión verificada para pasar TwoFactorMiddleware
+        $this->admin = User::factory()->create([
+            'role_id'              => $adminRole->id,
+            'two_factor_secret'    => 'test-secret',
+            'two_factor_confirmed' => true,
+        ]);
+        $this->editor = User::factory()->create([
+            'role_id'              => $editorRole->id,
+            'two_factor_secret'    => 'test-secret',
+            'two_factor_confirmed' => true,
+        ]);
+
+        $this->withSession(['2fa_verified' => true]);
     }
 
     private function makeBatch(string $periodo = 'Enero 2026'): MspUploadBatch
@@ -93,56 +110,22 @@ class MspReportControllerTest extends TestCase
     }
 
     // =========================================================================
-    // 2. UPLOAD — VALIDACIONES
+    // 2. IMPORTACIÓN SHAREPOINT — VALIDACIONES
+    // (el upload directo de Excel fue reemplazado por la importación desde SharePoint)
     // =========================================================================
 
-    public function test_upload_falla_sin_archivo(): void
+    public function test_sharepoint_import_falla_sin_filename(): void
     {
         $this->actingAs($this->admin)
-            ->post(route('admin.msp.upload'), ['periodo' => 'Enero 2026'])
-            ->assertSessionHasErrors('excel_file');
+            ->post(route('admin.msp.sharepoint.import'), ['periodo' => 'Enero 2026'])
+            ->assertSessionHasErrors('filename');
     }
 
-    public function test_upload_falla_sin_periodo(): void
+    public function test_sharepoint_import_falla_sin_periodo(): void
     {
-        $file = UploadedFile::fake()->create(
-            'test.xlsx', 100,
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        );
         $this->actingAs($this->admin)
-            ->post(route('admin.msp.upload'), ['excel_file' => $file])
+            ->post(route('admin.msp.sharepoint.import'), ['filename' => 'reporte.xlsx'])
             ->assertSessionHasErrors('periodo');
-    }
-
-    public function test_upload_falla_con_archivo_no_excel(): void
-    {
-        $file = UploadedFile::fake()->create('malware.php', 100, 'application/php');
-        $this->actingAs($this->admin)
-            ->post(route('admin.msp.upload'), [
-                'excel_file' => $file,
-                'periodo'    => 'Enero 2026',
-            ])
-            ->assertSessionHasErrors('excel_file');
-    }
-
-    public function test_upload_exitoso_crea_batch(): void
-    {
-        Excel::fake();
-        $file = UploadedFile::fake()->create(
-            'reporte.xlsx', 100,
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        );
-        $this->actingAs($this->admin)
-            ->post(route('admin.msp.upload'), [
-                'excel_file' => $file,
-                'periodo'    => 'Enero 2026',
-            ])
-            ->assertSessionHasNoErrors();
-
-        $this->assertDatabaseHas('msp_upload_batches', [
-            'filename' => 'reporte.xlsx',
-            'periodo'  => 'Enero 2026',
-        ]);
     }
 
     // =========================================================================
@@ -266,7 +249,7 @@ class MspReportControllerTest extends TestCase
         $response->assertDontSee('ACC-12345-SECRET');
     }
 
-    public function test_sharepoint_index_json_no_expone_credenciales(): void
+    public function test_sharepoint_import_no_expone_credenciales_en_errores(): void
     {
         config([
             'services.sharepoint.tenant_id'     => 'tenant-secreto',
@@ -279,12 +262,15 @@ class MspReportControllerTest extends TestCase
             ], 401),
         ]);
 
-        $response = $this->actingAs($this->admin)
-            ->getJson(route('admin.msp.sharepoint'));
+        $this->actingAs($this->admin)
+            ->post(route('admin.msp.sharepoint.import'), [
+                'filename' => 'reporte.xlsx',
+                'periodo'  => 'Enero 2026',
+            ]);
 
-        $content = $response->getContent();
-        $this->assertStringNotContainsString('tenant-secreto', $content);
-        $this->assertStringNotContainsString('secret-muy-privado', $content);
+        $error = (string) session('error');
+        $this->assertStringNotContainsString('tenant-secreto', $error);
+        $this->assertStringNotContainsString('secret-muy-privado', $error);
     }
 
     // =========================================================================

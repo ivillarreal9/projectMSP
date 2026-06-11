@@ -184,6 +184,7 @@ Route::middleware(['auth', 'module:meraki'])
         Route::get('/alerts',                                 [MerakiController::class, 'alerts'])->name('alerts');
         Route::get('/export/devices',                         [MerakiController::class, 'exportDevices'])->name('export.devices');
         Route::get('/export/licenses',                        [MerakiController::class, 'exportLicenses'])->name('export.licenses');
+        Route::get('/export/alerts',                          [MerakiController::class, 'exportAlerts'])->name('export.alerts');
         Route::get('/models/{model}',                         [MerakiController::class, 'modelDetail'])->name('model');
         Route::get('/{orgId}',                                [MerakiController::class, 'organization'])->name('organization');
         Route::post('/{orgId}/refresh',                       [MerakiController::class, 'refresh'])->name('refresh');

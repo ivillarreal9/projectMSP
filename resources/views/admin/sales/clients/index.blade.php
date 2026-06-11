@@ -199,7 +199,7 @@
 
                                 <td class="px-6 py-4 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
                                     @if($client['last_invoice'])
-                                        {{ \Carbon\Carbon::parse($client['last_invoice'])->format('d/m/Y') }}
+                                        {{ rescue(fn () => \Carbon\Carbon::parse($client['last_invoice'])->format('d/m/Y'), '—', false) }}
                                     @else
                                         <span class="text-gray-300 dark:text-gray-600">Sin facturas</span>
                                     @endif

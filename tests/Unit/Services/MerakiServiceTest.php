@@ -30,6 +30,10 @@ class MerakiServiceTest extends TestCase
         ]);
 
         Cache::flush();
+
+        // Cualquier petición no cubierta por Http::fake() debe fallar el test,
+        // nunca salir a la API real de Meraki.
+        Http::preventStrayRequests();
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -40,7 +44,8 @@ class MerakiServiceTest extends TestCase
     public function getLicenses_retorna_array_vacio_cuando_org_usa_co_termination(): void
     {
         Http::fake([
-            '*/organizations/org-515892/licenses' => Http::response(
+            // El sufijo * cubre el query string de paginación (?perPage=1000)
+            '*/organizations/org-515892/licenses*' => Http::response(
                 ['errors' => ['Organization with ID 515892 does not support per-device licensing']],
                 400
             ),
@@ -57,7 +62,7 @@ class MerakiServiceTest extends TestCase
     public function getLicenses_lanza_excepcion_en_error_500(): void
     {
         Http::fake([
-            '*/organizations/org-bad/licenses' => Http::response('Internal Server Error', 500),
+            '*/organizations/org-bad/licenses*' => Http::response('Internal Server Error', 500),
         ]);
 
         Cache::forget('meraki_licenses_org-bad');
@@ -71,7 +76,7 @@ class MerakiServiceTest extends TestCase
     public function getLicenses_cachea_el_resultado(): void
     {
         Http::fake([
-            '*/organizations/org-abc/licenses' => Http::response(
+            '*/organizations/org-abc/licenses*' => Http::response(
                 [['id' => 'lic-1', 'state' => 'active']],
                 200
             ),
@@ -103,9 +108,10 @@ class MerakiServiceTest extends TestCase
     public function getAllDevicesWithStatuses_usa_clave_global_no_por_sesion(): void
     {
         Http::fake([
-            '*/organizations'              => Http::response([['id' => 'org1', 'name' => 'Org 1']], 200),
-            '*/organizations/org1/devices' => Http::response([['serial' => 'Q2XY-1234', 'model' => 'MR36', 'name' => 'AP-Lobby']], 200),
-            '*/organizations/org1/devices/statuses' => Http::response([['serial' => 'Q2XY-1234', 'status' => 'online']], 200),
+            // El orden importa: los patrones más específicos van primero
+            '*/organizations/org1/devices/statuses*' => Http::response([['serial' => 'Q2XY-1234', 'status' => 'online']], 200),
+            '*/organizations/org1/devices*'          => Http::response([['serial' => 'Q2XY-1234', 'model' => 'MR36', 'name' => 'AP-Lobby']], 200),
+            '*/organizations'                        => Http::response([['id' => 'org1', 'name' => 'Org 1']], 200),
         ]);
 
         (new MerakiService())->getAllDevicesWithStatuses();
@@ -122,16 +128,17 @@ class MerakiServiceTest extends TestCase
     public function warmCache_no_lanza_excepcion_si_un_org_falla(): void
     {
         Http::fake([
+            // El orden importa: los patrones más específicos van primero
+            '*/organizations/org-ok/devices/statuses*' => Http::response([['serial' => 'S1', 'status' => 'online']], 200),
+            '*/organizations/org-ok/devices*'          => Http::response([['serial' => 'S1', 'model' => 'MR36', 'name' => 'AP1']], 200),
+            '*/organizations/org-ok/networks*'         => Http::response([], 200),
+            '*/organizations/org-ok/uplinks/statuses*' => Http::response([], 200),
+            '*/organizations/org-ok/licenses*'         => Http::response([], 200),
+            '*/organizations/org-bad/*'                => Http::response('Error', 500),
             '*/organizations' => Http::response([
                 ['id' => 'org-ok',  'name' => 'Org OK'],
                 ['id' => 'org-bad', 'name' => 'Org Bad'],
             ], 200),
-            '*/organizations/org-ok/devices'          => Http::response([['serial' => 'S1', 'model' => 'MR36', 'name' => 'AP1']], 200),
-            '*/organizations/org-ok/devices/statuses' => Http::response([['serial' => 'S1', 'status' => 'online']], 200),
-            '*/organizations/org-ok/networks'         => Http::response([], 200),
-            '*/organizations/org-ok/uplinks/statuses' => Http::response([], 200),
-            '*/organizations/org-ok/licenses'         => Http::response([], 200),
-            '*/organizations/org-bad/*'               => Http::response('Error', 500),
         ]);
 
         try {

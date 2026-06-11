@@ -188,8 +188,10 @@
         wrap.className = 'flex gap-2 ' + (role === 'user' ? 'justify-end' : 'justify-start');
         if (animate) wrap.style.animation = 'ovniFadeIn .22s ease-out';
 
+        // Se escapa el HTML ANTES de pasar por marked: el markdown (negritas, listas)
+        // sigue funcionando, pero el HTML crudo que pudiera emitir el LLM queda neutralizado.
         const html = role === 'assistant'
-            ? (typeof marked !== 'undefined' ? marked.parse(content) : escHtml(content))
+            ? (typeof marked !== 'undefined' ? marked.parse(escHtml(content)) : escHtml(content))
             : escHtml(content);
 
         const t = ts || time();

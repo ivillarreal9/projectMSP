@@ -40,7 +40,7 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                               d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
                     </svg>
-                    Exportar
+                    Exportar Excel
                 </a>
 
                 <form method="POST" action="{{ route('admin.meraki.refresh.all') }}">
@@ -58,8 +58,8 @@
                 </form>
 
                 @if(!empty($organizations))
-                <div x-data="{ open: false }" class="relative">
-                    <button @click="open = !open"
+                <div x-data="{ open: false, orgSearch: '' }" class="relative">
+                    <button @click="open = !open; if(open) $nextTick(() => $refs.orgSearch.focus())"
                             class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold
                                    border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800
                                    text-gray-600 dark:text-gray-300 rounded-lg hover:border-teal-400 transition">
@@ -68,22 +68,53 @@
                                   d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5"/>
                         </svg>
                         Organizaciones
+                        <span class="text-[10px] text-gray-400">({{ count($organizations) }})</span>
                         <svg class="w-3 h-3 transition-transform duration-150" :class="open ? 'rotate-180' : ''"
                              fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
                         </svg>
                     </button>
-                    <div x-show="open" @click.outside="open = false" x-transition
-                         class="absolute right-0 mt-1 w-64 bg-white dark:bg-gray-800 border border-gray-200
-                                dark:border-gray-700 rounded-xl shadow-lg z-10 py-1">
-                        @foreach($organizations as $org)
-                        <a href="{{ route('admin.meraki.organization', $org['id']) }}"
-                           class="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300
-                                  hover:bg-gray-50 dark:hover:bg-gray-700/50 transition">
-                            <span class="w-1.5 h-1.5 rounded-full bg-teal-400 shrink-0"></span>
-                            <span class="truncate">{{ $org['name'] }}</span>
-                        </a>
-                        @endforeach
+                    <div x-show="open" @click.outside="open = false; orgSearch = ''" x-transition
+                         class="absolute right-0 mt-1 w-72 bg-white dark:bg-gray-800 border border-gray-200
+                                dark:border-gray-700 rounded-xl shadow-lg z-10 flex flex-col" style="display:none;">
+
+                        {{-- Buscador sticky --}}
+                        <div class="p-2 border-b border-gray-100 dark:border-gray-700">
+                            <div class="relative">
+                                <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none"
+                                     fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                                </svg>
+                                <input type="text" x-ref="orgSearch" x-model="orgSearch"
+                                       @keydown.escape.stop="open = false; orgSearch = ''"
+                                       placeholder="Buscar organización..."
+                                       class="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700
+                                              bg-gray-50 dark:bg-gray-900 text-gray-700 dark:text-gray-200
+                                              focus:outline-none focus:ring-1 focus:ring-teal-400 placeholder-gray-400">
+                            </div>
+                        </div>
+
+                        {{-- Lista scrollable --}}
+                        @php
+                            $orgNamesLower = collect($organizations)->map(fn($o) => strtolower($o['name']))->values()->all();
+                        @endphp
+                        <div class="max-h-72 overflow-y-auto py-1">
+                            @foreach($organizations as $org)
+                            <a href="{{ route('admin.meraki.organization', $org['id']) }}"
+                               x-show="!orgSearch || @js(strtolower($org['name'])).includes(orgSearch.toLowerCase())"
+                               class="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300
+                                      hover:bg-gray-50 dark:hover:bg-gray-700/50 transition">
+                                <span class="w-1.5 h-1.5 rounded-full bg-teal-400 shrink-0"></span>
+                                <span class="truncate">{{ $org['name'] }}</span>
+                            </a>
+                            @endforeach
+
+                            {{-- Sin resultados --}}
+                            <p x-show="orgSearch && !@js($orgNamesLower).some(n => n.includes(orgSearch.toLowerCase()))"
+                               class="px-3 py-3 text-xs text-gray-400 text-center" style="display:none;">
+                                Sin coincidencias
+                            </p>
+                        </div>
                     </div>
                 </div>
                 @endif
@@ -205,10 +236,59 @@
             </div>
 
             {{-- Model cards grid --}}
-            <div class="space-y-4">
-                <div class="flex items-center justify-between">
+            @php
+                $categories = collect($grouped)->pluck('prefix')->unique()->values()->all();
+            @endphp
+            <div class="space-y-4"
+                 x-data="{ search: '', category: 'all', shown: {{ count($grouped) }} }"
+                 x-effect="
+                    const q = search.toLowerCase();
+                    let count = 0;
+                    $el.querySelectorAll('[data-model-card]').forEach(c => {
+                        const matchSearch = !q || (c.dataset.searchText || '').includes(q);
+                        const matchCat = category === 'all' || c.dataset.category === category;
+                        const visible = matchSearch && matchCat;
+                        c.style.display = visible ? '' : 'none';
+                        if (visible) count++;
+                    });
+                    shown = count;
+                 ">
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <h3 class="text-lg font-bold text-gray-800 dark:text-gray-100">Dispositivos por Modelo</h3>
-                    <p class="text-xs text-gray-400 font-medium uppercase tracking-widest">{{ count($grouped) }} modelos encontrados</p>
+                    <p class="text-xs text-gray-400 font-medium uppercase tracking-widest">
+                        <span x-text="shown"></span> de {{ count($grouped) }} modelos
+                    </p>
+                </div>
+
+                {{-- Filtros --}}
+                <div class="flex flex-col lg:flex-row lg:items-center gap-3">
+                    <div class="relative flex-1 max-w-sm">
+                        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none"
+                             fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                        </svg>
+                        <input type="text" x-model.debounce.150ms="search"
+                               placeholder="Buscar modelo o categoría..."
+                               class="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700
+                                      bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200
+                                      focus:outline-none focus:ring-1 focus:ring-teal-400 placeholder-gray-400">
+                    </div>
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                        <button type="button" @click="category = 'all'"
+                                :class="category === 'all' ? 'bg-teal-500 text-white border-teal-500' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700'"
+                                class="px-3 py-1.5 text-xs font-semibold rounded-lg border transition">Todos</button>
+                        @foreach($categories as $cat)
+                        <button type="button" @click="category = '{{ $cat }}'"
+                                :class="category === '{{ $cat }}' ? 'bg-teal-500 text-white border-teal-500' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700'"
+                                class="px-3 py-1.5 text-xs font-semibold rounded-lg border transition">
+                            {{ config("meraki.device_types.{$cat}", $cat) }}
+                        </button>
+                        @endforeach
+                    </div>
+                </div>
+
+                <div class="hidden py-16 text-center" :class="{ '!block': shown === 0 }">
+                    <p class="text-sm text-gray-400">Ningún modelo coincide con el filtro.</p>
                 </div>
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -223,6 +303,9 @@
                         $pctColor = $pct === 100 ? 'text-green-600 dark:text-green-400' : ($pct >= 80 ? 'text-yellow-600 dark:text-yellow-400' : 'text-red-600 dark:text-red-400');
                     @endphp
                     <a href="{{ route('admin.meraki.model', $model) }}"
+                       data-model-card
+                       data-search-text="{{ strtolower($model . ' ' . $group['label'] . ' ' . $group['prefix']) }}"
+                       data-category="{{ $group['prefix'] }}"
                        class="group bg-white dark:bg-gray-800 border {{ $cardBorder }} rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-teal-400 dark:hover:border-teal-400/50 transition-all duration-300 flex flex-col">
 
                         <div class="flex items-start justify-between mb-4">
@@ -354,7 +437,7 @@
                         ticks: {
                             color: gray400,
                             font: { size: 9, weight: 'bold' },
-                            stepSize: 1
+                            precision: 0
                         },
                         grid: { 
                             color: isDark ? '#374151' : '#f3f4f6',

@@ -130,6 +130,9 @@
 
         let clientesParaSync = [];
 
+        // Escapa texto interpolado en innerHTML (nombres de clientes vienen de Odoo/MSP)
+        const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
         async function cargarPreview() {
             const icon = document.getElementById('icon-preview');
             icon.classList.add('spinning');
@@ -149,9 +152,9 @@
                 tbody.innerHTML = data.clientes.map((c, i) => `
                     <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition">
                         <td class="px-4 py-2.5 text-gray-400 text-xs">${i + 1}</td>
-                        <td class="px-4 py-2.5 text-gray-800 dark:text-gray-100">${c.odoo_nombre}</td>
-                        <td class="px-4 py-2.5 text-gray-800 dark:text-gray-100">${c.msp_nombre}</td>
-                        <td class="px-4 py-2.5 font-mono text-xs text-cyan-600 dark:text-cyan-400">${c.numero_cuenta}</td>
+                        <td class="px-4 py-2.5 text-gray-800 dark:text-gray-100">${esc(c.odoo_nombre)}</td>
+                        <td class="px-4 py-2.5 text-gray-800 dark:text-gray-100">${esc(c.msp_nombre)}</td>
+                        <td class="px-4 py-2.5 font-mono text-xs text-cyan-600 dark:text-cyan-400">${esc(c.numero_cuenta)}</td>
                         <td class="px-4 py-2.5 text-center">
                             <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold
                                 ${c.similitud >= 90 ? 'bg-green-100 text-green-700' : 'bg-indigo-100 text-indigo-700'}">
@@ -229,7 +232,7 @@
                 if (erroresTotal.length > 0) {
                     document.getElementById('res-errores').classList.remove('hidden');
                     document.getElementById('res-errores-lista').innerHTML =
-                        erroresTotal.map(e => `<li>${e}</li>`).join('');
+                        erroresTotal.map(e => `<li>${esc(e)}</li>`).join('');
                 }
 
             } catch (e) {

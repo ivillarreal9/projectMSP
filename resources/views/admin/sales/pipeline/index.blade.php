@@ -180,7 +180,7 @@
                         <tbody class="divide-y divide-gray-50 dark:divide-gray-700/60">
                             @forelse($pipeline as $order)
                             @php
-                                $vence    = $order['validity_date'] ? \Carbon\Carbon::parse($order['validity_date']) : null;
+                                $vence    = $order['validity_date'] ? rescue(fn () => \Carbon\Carbon::parse($order['validity_date']), null, false) : null;
                                 $vencido  = $vence && $vence->isPast();
                                 $diasLeft = $vence ? (int) now()->diffInDays($vence, false) : null;
                             @endphp
@@ -205,7 +205,7 @@
                                     @endif
                                 </td>
                                 <td class="px-6 py-4 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                                    {{ $order['date_order'] ? \Carbon\Carbon::parse($order['date_order'])->format('d/m/Y') : '—' }}
+                                    {{ $order['date_order'] ? rescue(fn () => \Carbon\Carbon::parse($order['date_order'])->format('d/m/Y'), '—', false) : '—' }}
                                 </td>
                                 <td class="px-6 py-4 text-xs whitespace-nowrap">
                                     @if($vence)

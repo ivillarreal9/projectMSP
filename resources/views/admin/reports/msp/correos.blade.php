@@ -778,6 +778,13 @@
     window.openModalPlantillas  = function() { document.getElementById('modal-plantillas').classList.remove('hidden'); cargarPlantillas(); };
     window.closeModalPlantillas = function() { document.getElementById('modal-plantillas').classList.add('hidden'); };
 
+    // Escapa texto interpolado en innerHTML (los nombres de plantilla los escribe el usuario)
+    function escHtml(str) {
+        const d = document.createElement('div');
+        d.textContent = String(str ?? '');
+        return d.innerHTML;
+    }
+
     async function cargarPlantillas() {
         try {
             const res = await fetch('{{ route('admin.msp.plantillas.index') }}', {
@@ -806,7 +813,7 @@
                 <div class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 text-white text-xs" style="background:var(--ovni-orange)">
                     <i class="fa-solid fa-file-lines"></i>
                 </div>
-                <span class="text-xs text-gray-700 dark:text-gray-300 truncate flex-1">${p.nombre}</span>
+                <span class="text-xs text-gray-700 dark:text-gray-300 truncate flex-1">${escHtml(p.nombre)}</span>
                 ${p.imagen_path ? '<i class="fa-solid fa-image text-xs text-orange-400 flex-shrink-0" title="Tiene banner"></i>' : ''}
             </div>
         `).join('');
@@ -817,7 +824,7 @@
             const og = document.getElementById(`optgroup_custom_${panel}`);
             if (!og) return;
             og.innerHTML = plantillasCustom.map(p =>
-                `<option value="${p.id}">${p.nombre}${p.imagen_path ? ' 🖼' : ''}</option>`
+                `<option value="${p.id}">${escHtml(p.nombre)}${p.imagen_path ? ' 🖼' : ''}</option>`
             ).join('');
         });
     }

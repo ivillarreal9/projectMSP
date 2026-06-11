@@ -146,10 +146,13 @@
         return          { txt: 'text-red-500',     bg: 'bg-red-500' };
     }
 
+    // Escapa texto interpolado en innerHTML (nombres/correos vienen de Odoo)
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
     function avatarHtml(exec, idx, size='w-11 h-11', textSize='text-sm') {
-        if (exec.image) return `<img src="${exec.image}" class="${size} rounded-full object-cover flex-shrink-0" alt="${exec.name}">`;
+        if (exec.image) return `<img src="${esc(exec.image)}" class="${size} rounded-full object-cover flex-shrink-0" alt="${esc(exec.name)}">`;
         const bg = palette[idx % palette.length];
-        return `<div class="${size} rounded-full flex items-center justify-center text-white ${textSize} font-bold flex-shrink-0" style="background:${bg}">${exec.initials}</div>`;
+        return `<div class="${size} rounded-full flex items-center justify-center text-white ${textSize} font-bold flex-shrink-0" style="background:${bg}">${esc(exec.initials)}</div>`;
     }
 
     function renderKpis(d) {
@@ -211,9 +214,9 @@
                 <div class="flex items-center gap-3">
                     ${avatarHtml(exec, idx)}
                     <div class="min-w-0">
-                        <p class="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">${exec.name}</p>
-                        <p class="text-xs text-gray-400 truncate">${exec.email ?? ''}</p>
-                        ${exec.mobile && exec.mobile !== false ? `<p class="text-xs text-gray-400">${exec.mobile}</p>` : (exec.phone && exec.phone !== false ? `<p class="text-xs text-gray-400">${exec.phone}</p>` : '')}
+                        <p class="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">${esc(exec.name)}</p>
+                        <p class="text-xs text-gray-400 truncate">${esc(exec.email ?? '')}</p>
+                        ${exec.mobile && exec.mobile !== false ? `<p class="text-xs text-gray-400">${esc(exec.mobile)}</p>` : (exec.phone && exec.phone !== false ? `<p class="text-xs text-gray-400">${esc(exec.phone)}</p>` : '')}
                     </div>
                 </div>
                 <div class="grid grid-cols-2 gap-2">
@@ -266,8 +269,8 @@
                     <div class="flex items-center gap-3">
                         ${avatarHtml(exec, idx, 'w-7 h-7', 'text-xs')}
                         <div>
-                            <p class="text-sm text-gray-800 dark:text-gray-200 font-medium">${exec.name}</p>
-                            <p class="text-xs text-gray-400">${exec.email ?? ''}</p>
+                            <p class="text-sm text-gray-800 dark:text-gray-200 font-medium">${esc(exec.name)}</p>
+                            <p class="text-xs text-gray-400">${esc(exec.email ?? '')}</p>
                         </div>
                     </div>
                 </td>
@@ -298,7 +301,7 @@
 
     // ── Fetch ─────────────────────────────────────────────────
     fetch(`{{ route('admin.sales.executives.data') }}?year=${YEAR}&month=${MONTH}`)
-        .then(r => r.json())
+        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
         .then(d => {
             document.getElementById('exec-count').textContent = `${d.executives.length} ejecutivas`;
             renderKpis(d);

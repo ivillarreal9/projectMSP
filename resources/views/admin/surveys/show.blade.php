@@ -101,7 +101,7 @@
 
                                     {{-- Fecha --}}
                                     <td class="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
-                                        {{ $survey->fecha ? \Carbon\Carbon::parse($survey->fecha)->format('d/m/Y') : 'N/A' }}
+                                        {{ $survey->fecha ? rescue(fn () => \Carbon\Carbon::parse($survey->fecha)->format('d/m/Y'), 'N/A', false) : 'N/A' }}
                                     </td>
 
                                     {{-- WhatsApp --}}

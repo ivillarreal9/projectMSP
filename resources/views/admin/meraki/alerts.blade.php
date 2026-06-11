@@ -14,6 +14,18 @@
             </div>
 
             <div class="flex items-center gap-2">
+                @if(!empty($problematic))
+                <a href="{{ route('admin.meraki.export.alerts') }}"
+                   class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold
+                          border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800
+                          text-gray-600 dark:text-gray-300 rounded-lg hover:border-teal-400 transition">
+                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                    </svg>
+                    Exportar Excel
+                </a>
+                @endif
                 <form method="POST" action="{{ route('admin.meraki.refresh.all') }}">
                     @csrf
                     <button type="submit"
@@ -76,17 +88,68 @@
 
             @else
             {{-- Tabla de dispositivos con problemas --}}
-            <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl overflow-hidden shadow-sm">
+            @php
+                $alertOrgs = collect($problematic)->pluck('_orgName')->filter()->unique()->values()->all();
+            @endphp
+            <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl overflow-hidden shadow-sm"
+                 x-data="{ search: '', status: 'all', org: 'all', shown: {{ count($problematic) }} }"
+                 x-effect="
+                    const q = search.toLowerCase();
+                    let count = 0;
+                    $el.querySelectorAll('[data-alert-row]').forEach(r => {
+                        const matchSearch = !q || (r.dataset.searchText || '').includes(q);
+                        const matchStatus = status === 'all' || r.dataset.status === status;
+                        const matchOrg = org === 'all' || r.dataset.org === org;
+                        const visible = matchSearch && matchStatus && matchOrg;
+                        r.style.display = visible ? '' : 'none';
+                        if (visible) count++;
+                    });
+                    shown = count;
+                 ">
 
-                <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-700">
-                    <p class="text-sm font-bold text-gray-800 dark:text-gray-100">
-                        Dispositivos con problemas
-                    </p>
-                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold
-                                 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400">
-                        <span class="w-1.5 h-1.5 rounded-full bg-red-400"></span>
-                        {{ count($problematic) }} dispositivos
-                    </span>
+                <div class="px-6 py-4 border-b border-gray-100 dark:border-gray-700 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <p class="text-sm font-bold text-gray-800 dark:text-gray-100">Dispositivos con problemas</p>
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold
+                                     bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400">
+                            <span class="w-1.5 h-1.5 rounded-full bg-red-400"></span>
+                            <span x-text="shown"></span> de {{ count($problematic) }}
+                        </span>
+                    </div>
+                    <div class="flex flex-col lg:flex-row lg:items-center gap-2">
+                        <div class="relative flex-1 max-w-sm">
+                            <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none"
+                                 fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                            </svg>
+                            <input type="text" x-model.debounce.150ms="search" placeholder="Buscar nombre, serial, modelo..."
+                                   class="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700
+                                          bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200
+                                          focus:outline-none focus:ring-1 focus:ring-teal-400 placeholder-gray-400">
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            @foreach(['all' => 'Todos', 'alerting' => 'Alerting', 'offline' => 'Offline'] as $val => $lbl)
+                            <button type="button" @click="status = '{{ $val }}'"
+                                    :class="status === '{{ $val }}' ? 'bg-teal-500 text-white border-teal-500' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700'"
+                                    class="px-2.5 py-1.5 text-xs font-semibold rounded-lg border transition">{{ $lbl }}</button>
+                            @endforeach
+                        </div>
+                        @if(count($alertOrgs) > 1)
+                        <select x-model="org"
+                                class="px-3 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700
+                                       bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300
+                                       focus:outline-none focus:ring-1 focus:ring-teal-400">
+                            <option value="all">Todas las orgs</option>
+                            @foreach($alertOrgs as $orgName)
+                            <option value="{{ $orgName }}">{{ $orgName }}</option>
+                            @endforeach
+                        </select>
+                        @endif
+                    </div>
+                </div>
+
+                <div class="hidden px-6 py-10 text-center" :class="{ '!block': shown === 0 }">
+                    <p class="text-sm text-gray-400">Ningún dispositivo coincide con el filtro.</p>
                 </div>
 
                 <div class="overflow-x-auto">
@@ -124,7 +187,11 @@
                                     default                     => 'text-yellow-600 dark:text-yellow-400',
                                 };
                             @endphp
-                            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition {{ $color['row'] }}">
+                            <tr data-alert-row
+                                data-search-text="{{ strtolower(($device['name'] ?? '') . ' ' . ($device['serial'] ?? '') . ' ' . ($device['model'] ?? '')) }}"
+                                data-status="{{ $st }}"
+                                data-org="{{ $device['_orgName'] ?? '' }}"
+                                class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition {{ $color['row'] }}">
                                 <td class="px-5 py-3.5">
                                     <div class="flex items-center gap-2">
                                         <span class="w-2.5 h-2.5 rounded-full {{ $color['dot'] }} shrink-0 {{ $st === 'alerting' ? 'animate-pulse' : '' }}"></span>

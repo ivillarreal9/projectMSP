@@ -13,18 +13,30 @@
                 <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Estado de redes y dispositivos</p>
             </div>
 
-            <form method="POST" action="{{ route('admin.meraki.refresh', $org['id']) }}">
-                @csrf
-                <button type="submit"
-                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold
-                               bg-teal-500 hover:bg-teal-600 text-white rounded-lg transition">
+            <div class="flex items-center gap-2">
+                <a href="{{ route('admin.meraki.export.devices', ['org' => $org['id']]) }}"
+                   class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold
+                          border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800
+                          text-gray-600 dark:text-gray-300 rounded-lg hover:border-teal-400 transition">
                     <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
                     </svg>
-                    Actualizar
-                </button>
-            </form>
+                    Exportar Excel
+                </a>
+                <form method="POST" action="{{ route('admin.meraki.refresh', $org['id']) }}">
+                    @csrf
+                    <button type="submit"
+                            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold
+                                   bg-teal-500 hover:bg-teal-600 text-white rounded-lg transition">
+                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                        </svg>
+                        Actualizar
+                    </button>
+                </form>
+            </div>
         </div>
     </x-slot>
 
@@ -112,13 +124,40 @@
 
             {{-- Networks --}}
             @if(count($networks) > 0)
-            <div id="redes">
-                <p class="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-3">
-                    Redes ({{ count($networks) }})
-                </p>
+            <div id="redes"
+                 x-data="{ search: '', shown: {{ count($networks) }} }"
+                 x-effect="
+                    const q = search.toLowerCase();
+                    let count = 0;
+                    $el.querySelectorAll('[data-network-card]').forEach(c => {
+                        const visible = !q || (c.dataset.searchText || '').includes(q);
+                        c.style.display = visible ? '' : 'none';
+                        if (visible) count++;
+                    });
+                    shown = count;
+                 ">
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+                    <p class="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-widest">
+                        Redes (<span x-text="shown"></span>/{{ count($networks) }})
+                    </p>
+                    @if(count($networks) > 4)
+                    <div class="relative max-w-xs w-full">
+                        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none"
+                             fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                        </svg>
+                        <input type="text" x-model.debounce.150ms="search" placeholder="Buscar red..."
+                               class="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700
+                                      bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200
+                                      focus:outline-none focus:ring-1 focus:ring-teal-400 placeholder-gray-400">
+                    </div>
+                    @endif
+                </div>
                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     @foreach($networks as $net)
                     <a href="{{ route('admin.meraki.network', [$org['id'], $net['id']]) }}"
+                       data-network-card
+                       data-search-text="{{ strtolower(($net['name'] ?? '') . ' ' . implode(' ', $net['productTypes'] ?? [])) }}"
                        class="group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4
                               hover:border-teal-400 dark:hover:border-teal-500 hover:shadow-sm transition-all">
                         <div class="flex items-center justify-between mb-2">
@@ -133,7 +172,11 @@
                                 </span>
                             </div>
                             @if(($net['_device_count'] ?? 0) > 0)
-                            <span class="text-xs text-gray-400 shrink-0 ml-2">{{ $net['_device_count'] }} disp.</span>
+                            @php $allOnline = ($net['_online_count'] ?? 0) >= $net['_device_count']; @endphp
+                            <span class="inline-flex items-center gap-1.5 text-xs shrink-0 ml-2 {{ $allOnline ? 'text-gray-400' : 'text-red-500 dark:text-red-400' }}">
+                                <span class="w-1.5 h-1.5 rounded-full {{ $allOnline ? 'bg-green-400' : 'bg-red-400' }}"></span>
+                                {{ $net['_online_count'] ?? 0 }}/{{ $net['_device_count'] }} online
+                            </span>
                             @endif
                         </div>
                         @if(!empty($net['productTypes']))
@@ -213,34 +256,45 @@
             {{-- Devices grouped by model --}}
             @if(count($grouped) > 0)
             <div id="dispositivos" class="space-y-6"
-                 x-data="{ search: '' }"
+                 x-data="{ search: '', status: 'all' }"
                  x-effect="
                     const q = search.toLowerCase();
                     $el.querySelectorAll('[data-device-row]').forEach(r => {
-                        r.style.display = !q || (r.dataset.searchText || '').includes(q) ? '' : 'none';
+                        const matchSearch = !q || (r.dataset.searchText || '').includes(q);
+                        const matchStatus = status === 'all' || r.dataset.status === status;
+                        r.style.display = (matchSearch && matchStatus) ? '' : 'none';
                     });
                     $el.querySelectorAll('[data-model-group]').forEach(g => {
                         const any = [...g.querySelectorAll('[data-device-row]')].some(r => r.style.display !== 'none');
-                        g.style.display = !q || any ? '' : 'none';
+                        g.style.display = any ? '' : 'none';
                     });
                  ">
 
-                <div class="flex items-center justify-between gap-4">
+                <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
                     <p class="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-widest shrink-0">
                         Dispositivos por modelo
                     </p>
-                    <div class="relative max-w-xs w-full">
-                        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none"
-                             fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-                        </svg>
-                        <input type="text"
-                               x-model.debounce.150ms="search"
-                               placeholder="Buscar por nombre, serial o modelo..."
-                               class="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700
-                                      bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200
-                                      focus:outline-none focus:ring-1 focus:ring-teal-400 placeholder-gray-400">
+                    <div class="flex flex-col sm:flex-row sm:items-center gap-2">
+                        <div class="relative max-w-xs w-full">
+                            <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none"
+                                 fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                            </svg>
+                            <input type="text"
+                                   x-model.debounce.150ms="search"
+                                   placeholder="Buscar por nombre, serial o modelo..."
+                                   class="w-full sm:w-64 pl-9 pr-3 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700
+                                          bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200
+                                          focus:outline-none focus:ring-1 focus:ring-teal-400 placeholder-gray-400">
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            @foreach(['all' => 'Todos', 'online' => 'Online', 'offline' => 'Offline', 'alerting' => 'Alerting'] as $val => $lbl)
+                            <button type="button" @click="status = '{{ $val }}'"
+                                    :class="status === '{{ $val }}' ? 'bg-teal-500 text-white border-teal-500' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700'"
+                                    class="px-2.5 py-1.5 text-xs font-semibold rounded-lg border transition">{{ $lbl }}</button>
+                            @endforeach
+                        </div>
                     </div>
                 </div>
 
@@ -283,33 +337,15 @@
                             <tbody class="divide-y divide-gray-50 dark:divide-gray-700/50">
                                 @foreach($group['devices'] as $device)
                                 @php
-                                    $st    = $device['_status']['status'] ?? 'unknown';
-                                    $color = match($st) {
-                                        'online'   => ['dot' => 'bg-green-400',  'text' => 'text-green-600 dark:text-green-400',   'label' => 'Online'],
-                                        'offline'  => ['dot' => 'bg-red-400',    'text' => 'text-red-600 dark:text-red-400',       'label' => 'Offline'],
-                                        'alerting' => ['dot' => 'bg-yellow-400', 'text' => 'text-yellow-600 dark:text-yellow-400', 'label' => 'Alerting'],
-                                        'dormant'  => ['dot' => 'bg-gray-400',   'text' => 'text-gray-500',                        'label' => 'Dormant'],
-                                        default    => ['dot' => 'bg-gray-300',   'text' => 'text-gray-400',                        'label' => 'N/A'],
-                                    };
-                                @endphp
-                                @php
-                                    $lastRaw  = $device['_status']['lastReportedAt'] ?? null;
-                                    try {
-                                        $lastDt   = $lastRaw ? \Carbon\Carbon::parse($lastRaw) : null;
-                                        $lastAgo  = $lastDt?->diffForHumans();
-                                        $lastFmt  = $lastDt?->format('d/m/Y H:i');
-                                        $lastOld  = $lastDt && $lastDt->diffInHours(now()) > 24;
-                                    } catch (\Exception $e) { $lastDt = $lastAgo = $lastFmt = null; $lastOld = false; }
+                                    $st = $device['_status']['status'] ?? 'unknown';
                                     $searchText = strtolower(($device['name'] ?? '') . ' ' . ($device['serial'] ?? '') . ' ' . ($device['model'] ?? ''));
                                 @endphp
                                 <tr data-device-row
                                     data-search-text="{{ $searchText }}"
+                                    data-status="{{ $st }}"
                                     class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition">
                                     <td class="px-4 py-2.5">
-                                        <div class="flex items-center gap-1.5">
-                                            <span class="w-2 h-2 rounded-full {{ $color['dot'] }} shrink-0"></span>
-                                            <span class="text-xs font-medium {{ $color['text'] }}">{{ $color['label'] }}</span>
-                                        </div>
+                                        <x-meraki.status-badge :status="$st" />
                                     </td>
                                     <td class="px-4 py-2.5 font-medium text-gray-800 dark:text-gray-200">
                                         {{ $device['name'] ?? $device['serial'] ?? '—' }}
@@ -324,14 +360,7 @@
                                         {{ $networkMap[$device['networkId'] ?? ''] ?? $device['networkId'] ?? '—' }}
                                     </td>
                                     <td class="px-4 py-2.5 hidden xl:table-cell">
-                                        @if($lastFmt)
-                                        <p class="text-xs {{ $lastOld ? 'text-red-500 dark:text-red-400' : 'text-gray-500 dark:text-gray-400' }} font-medium">
-                                            {{ $lastAgo }}
-                                        </p>
-                                        <p class="text-[10px] text-gray-400 mt-0.5">{{ $lastFmt }}</p>
-                                        @else
-                                        <span class="text-xs text-gray-300 dark:text-gray-600">—</span>
-                                        @endif
+                                        <x-meraki.last-report :at="$device['_status']['lastReportedAt'] ?? null" />
                                     </td>
                                 </tr>
                                 @endforeach

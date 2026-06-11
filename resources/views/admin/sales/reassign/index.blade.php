@@ -205,7 +205,7 @@
                                         {{ $executive }}
                                     </td>
                                     <td class="px-6 py-4 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                                        {{ $lastInvoice ? \Carbon\Carbon::parse($lastInvoice)->format('d/m/Y') : 'Sin facturas' }}
+                                        {{ $lastInvoice ? rescue(fn () => \Carbon\Carbon::parse($lastInvoice)->format('d/m/Y'), '—', false) : 'Sin facturas' }}
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <span class="text-sm font-semibold {{ $daysColor }}">

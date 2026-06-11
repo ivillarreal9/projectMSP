@@ -106,7 +106,7 @@
         hideError();
 
         fetch('{{ route('admin.api-customers.fetch') }}')
-            .then(r => r.json())
+            .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
             .then(data => {
                 if (data.error) {
                     showError(data.error);
