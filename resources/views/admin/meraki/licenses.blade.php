@@ -14,10 +14,117 @@
                     <span class="text-gray-600 dark:text-gray-300">Licencias</span>
                 </div>
                 <h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">Licencias</h2>
-                <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Licenciamiento por modelo de dispositivo</p>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                    @if($selectedOrgId && !empty($organizations))
+                        @php $selOrg = collect($organizations)->firstWhere('id', $selectedOrgId); @endphp
+                        {{ $selOrg['name'] ?? 'Organización' }} &mdash; Licenciamiento por modelo
+                    @else
+                        Licenciamiento por modelo de dispositivo
+                    @endif
+                </p>
             </div>
 
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 flex-wrap">
+                {{-- Selector de organización --}}
+                @if(!empty($organizations))
+                @php
+                    $selectedOrgName = $selectedOrgId
+                        ? (collect($organizations)->firstWhere('id', $selectedOrgId)['name'] ?? 'Organización')
+                        : 'Todas las organizaciones';
+                @endphp
+                <div class="relative" x-data="orgDropdown()" @click.away="open = false" @keydown.escape.window="open = false">
+
+                    {{-- Trigger button --}}
+                    <button type="button" @click="open = !open"
+                            class="inline-flex items-center gap-2 pl-3 pr-8 py-1.5 text-xs font-semibold
+                                   rounded-lg border border-gray-200 dark:border-gray-700
+                                   bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200
+                                   focus:outline-none focus:ring-1 focus:ring-teal-400 cursor-pointer
+                                   max-w-[220px]">
+                        <svg class="w-3 h-3 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-2 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+                        </svg>
+                        <span class="truncate">{{ $selectedOrgName }}</span>
+                    </button>
+                    <svg class="absolute right-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none"
+                         fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
+
+                    {{-- Dropdown panel --}}
+                    <div x-show="open"
+                         x-transition:enter="transition ease-out duration-100"
+                         x-transition:enter-start="opacity-0 scale-95"
+                         x-transition:enter-end="opacity-100 scale-100"
+                         x-transition:leave="transition ease-in duration-75"
+                         x-transition:leave-start="opacity-100 scale-100"
+                         x-transition:leave-end="opacity-0 scale-95"
+                         x-cloak
+                         class="absolute right-0 top-full mt-1 z-50 w-72 bg-white dark:bg-gray-800
+                                border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl overflow-hidden">
+
+                        {{-- Search input --}}
+                        <div class="p-2 border-b border-gray-100 dark:border-gray-700">
+                            <div class="relative">
+                                <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none"
+                                     fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                          d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                                </svg>
+                                <input type="text" x-model="q" x-ref="searchInput"
+                                       placeholder="Buscar organización..."
+                                       class="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg
+                                              border border-gray-200 dark:border-gray-700
+                                              bg-gray-50 dark:bg-gray-900 text-gray-700 dark:text-gray-200
+                                              focus:outline-none focus:ring-1 focus:ring-teal-400 placeholder-gray-400">
+                            </div>
+                        </div>
+
+                        {{-- Options list — overscroll-behavior:contain evita que el scroll salga al page --}}
+                        <div class="overflow-y-auto py-1" style="max-height:260px; overscroll-behavior:contain;">
+
+                            {{-- Todas las organizaciones --}}
+                            <a href="{{ route('admin.meraki.licenses') }}"
+                               x-show="!q || 'todas las organizaciones'.includes(q.toLowerCase())"
+                               class="flex items-center gap-2 w-full px-4 py-2 text-xs cursor-pointer
+                                      hover:bg-teal-50 dark:hover:bg-teal-900/20 transition
+                                      {{ !$selectedOrgId ? 'text-teal-600 dark:text-teal-400 font-semibold bg-teal-50/50 dark:bg-teal-900/10' : 'text-gray-700 dark:text-gray-300' }}">
+                                @if(!$selectedOrgId)
+                                <svg class="w-3 h-3 text-teal-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+                                </svg>
+                                @else
+                                <span class="w-3 shrink-0"></span>
+                                @endif
+                                Todas las organizaciones
+                            </a>
+
+                            {{-- Una entrada por organización --}}
+                            @foreach($organizations as $org)
+                            @php $isSelected = $selectedOrgId === $org['id']; @endphp
+                            <a href="{{ route('admin.meraki.licenses') }}?org={{ $org['id'] }}"
+                               data-org-name="{{ strtolower($org['name']) }}"
+                               x-show="!q || $el.dataset.orgName.includes(q.toLowerCase())"
+                               class="flex items-center gap-2 w-full px-4 py-2 text-xs cursor-pointer
+                                      hover:bg-teal-50 dark:hover:bg-teal-900/20 transition
+                                      {{ $isSelected ? 'text-teal-600 dark:text-teal-400 font-semibold bg-teal-50/50 dark:bg-teal-900/10' : 'text-gray-700 dark:text-gray-300' }}">
+                                @if($isSelected)
+                                <svg class="w-3 h-3 text-teal-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+                                </svg>
+                                @else
+                                <span class="w-1.5 h-1.5 rounded-full bg-teal-400/60 shrink-0 ml-[3px]"></span>
+                                @endif
+                                {{ $org['name'] }}
+                            </a>
+                            @endforeach
+
+                        </div>
+                    </div>
+                </div>
+                @endif
+
                 <a href="{{ route('admin.meraki.export.licenses') }}"
                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold
                           border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800
@@ -102,48 +209,65 @@
                     </div>
                 </div>
 
-                {{-- KPI stack --}}
-                <div style="width:15%;" class="flex flex-col gap-3 shrink-0">
-                    <div class="flex-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-3 shadow-sm flex items-center justify-between overflow-hidden relative">
-                        <div class="absolute left-0 top-0 bottom-0 w-1 bg-green-500"></div>
-                        <div class="pl-1">
-                            <p class="text-[8px] font-black text-gray-400 uppercase tracking-widest">Activas</p>
-                            <h3 class="text-lg font-black text-gray-800 dark:text-gray-100 mt-0.5">{{ $totalActive }}</h3>
-                        </div>
-                        <div class="w-7 h-7 bg-green-50 dark:bg-green-900/20 rounded-lg flex items-center justify-center shrink-0">
-                            <svg class="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
-                            </svg>
-                        </div>
+                {{-- Próximas a vencer --}}
+                @php
+                    $upcoming = collect($byModel)
+                        ->map(function ($group, $model) {
+                            $soonest = collect($group['licenses'])
+                                ->filter(fn($l) => in_array(strtolower($l['state'] ?? ''), ['active', 'expiring']) && !empty($l['expirationDate']))
+                                ->sortBy('expirationDate')
+                                ->first();
+                            if (!$soonest) return null;
+                            try {
+                                $days = (int) now()->diffInDays(\Carbon\Carbon::parse($soonest['expirationDate']), false);
+                                $fmt  = \Carbon\Carbon::parse($soonest['expirationDate'])->format('d M Y');
+                            } catch (\Exception $e) { return null; }
+                            return ['model' => $model, 'date' => $fmt, 'days' => $days];
+                        })
+                        ->filter()
+                        ->sortBy('days')
+                        ->take(5)
+                        ->values();
+                @endphp
+                <div style="width:22%;" class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-5 shadow-sm flex flex-col shrink-0">
+                    <div class="flex items-center gap-2 mb-4">
+                        <svg class="w-3.5 h-3.5 text-orange-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                        </svg>
+                        <p class="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-[0.2em]">Próximas a vencer</p>
                     </div>
-                    <div class="flex-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-3 shadow-sm flex items-center justify-between overflow-hidden relative">
-                        <div class="absolute left-0 top-0 bottom-0 w-1" style="background-color:#3b82f6"></div>
-                        <div class="pl-1">
-                            <p class="text-[8px] font-black text-gray-400 uppercase tracking-widest">Sin usar</p>
-                            <h3 class="text-lg font-black text-gray-800 dark:text-gray-100 mt-0.5">{{ $totalUnused }}</h3>
+
+                    @if($upcoming->isEmpty())
+                    <p class="text-xs text-gray-400 text-center mt-4">Sin datos</p>
+                    @else
+                    <div class="flex flex-col gap-2.5 flex-1">
+                        @foreach($upcoming as $item)
+                        @php
+                            $urgency = match(true) {
+                                $item['days'] < 30  => ['bar' => 'bg-red-400',    'text' => 'text-red-600 dark:text-red-400',       'sub' => 'text-red-400'],
+                                $item['days'] < 90  => ['bar' => 'bg-orange-400', 'text' => 'text-orange-600 dark:text-orange-400', 'sub' => 'text-orange-400'],
+                                $item['days'] < 180 => ['bar' => 'bg-yellow-400', 'text' => 'text-yellow-600 dark:text-yellow-400', 'sub' => 'text-yellow-400'],
+                                default             => ['bar' => 'bg-teal-400',   'text' => 'text-gray-700 dark:text-gray-300',     'sub' => 'text-gray-400'],
+                            };
+                        @endphp
+                        <div class="flex items-center gap-2.5 p-2.5 rounded-xl bg-gray-50 dark:bg-gray-700/30 border border-gray-100 dark:border-gray-700">
+                            <div class="w-1 self-stretch rounded-full {{ $urgency['bar'] }} shrink-0"></div>
+                            <div class="min-w-0 flex-1">
+                                <p class="text-xs font-bold text-gray-800 dark:text-gray-100 truncate">{{ $item['model'] }}</p>
+                                <p class="text-[10px] {{ $urgency['sub'] }} mt-0.5">{{ $item['date'] }}</p>
+                            </div>
+                            <span class="text-[10px] font-bold {{ $urgency['text'] }} shrink-0 whitespace-nowrap">
+                                {{ $item['days'] > 0 ? 'en ' . $item['days'] . 'd' : 'vencida' }}
+                            </span>
                         </div>
-                        <div class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style="background-color:#eff6ff">
-                            <svg class="w-4 h-4" style="color:#3b82f6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/>
-                            </svg>
-                        </div>
+                        @endforeach
                     </div>
-                    <div class="flex-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-3 shadow-sm flex items-center justify-between overflow-hidden relative">
-                        <div class="absolute left-0 top-0 bottom-0 w-1" style="background-color:#ef4444"></div>
-                        <div class="pl-1">
-                            <p class="text-[8px] font-black text-gray-400 uppercase tracking-widest">Vencidas</p>
-                            <h3 class="text-lg font-black text-gray-800 dark:text-gray-100 mt-0.5">{{ $totalExpired }}</h3>
-                        </div>
-                        <div class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style="background-color:#fef2f2">
-                            <svg class="w-4 h-4" style="color:#ef4444" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
-                            </svg>
-                        </div>
-                    </div>
+                    @endif
                 </div>
 
                 {{-- Bar chart por modelo --}}
-                <div style="width:63%;" class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-6 shadow-sm flex flex-col shrink-0">
+                <div style="width:56%;" class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-6 shadow-sm flex flex-col shrink-0">
                     <p class="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-[0.2em] mb-4">Distribución por Modelo</p>
                     <div class="flex-1 min-h-[200px]">
                         <canvas id="licModelsBar"></canvas>
@@ -199,6 +323,32 @@
                         $barColor  = $pct === 100 ? 'bg-green-400' : ($pct >= 70 ? 'bg-yellow-400' : 'bg-red-400');
                         $pctColor  = $pct === 100 ? 'text-green-600 dark:text-green-400' : ($pct >= 70 ? 'text-yellow-600 dark:text-yellow-400' : 'text-red-600 dark:text-red-400');
                         $modelKey  = Str::slug($model);
+
+                        // Próximo vencimiento entre licencias activas
+                        $soonestExp = collect($group['licenses'])
+                            ->filter(fn($l) => in_array(strtolower($l['state'] ?? ''), ['active', 'expiring']) && !empty($l['expirationDate']))
+                            ->sortBy('expirationDate')
+                            ->first()['expirationDate'] ?? null;
+                        try {
+                            $soonestExpDays = $soonestExp ? (int) now()->diffInDays(\Carbon\Carbon::parse($soonestExp), false) : null;
+                            $soonestExpFmt  = $soonestExp ? \Carbon\Carbon::parse($soonestExp)->format('d M Y') : null;
+                        } catch (\Exception $e) {
+                            $soonestExpDays = null; $soonestExpFmt = null;
+                        }
+                        $expBadgeColor = match(true) {
+                            $soonestExpDays !== null && $soonestExpDays < 30  => 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400',
+                            $soonestExpDays !== null && $soonestExpDays < 90  => 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400',
+                            $soonestExpDays !== null                           => 'bg-gray-50 dark:bg-gray-700/30 text-gray-500 dark:text-gray-400',
+                            default                                            => '',
+                        };
+
+                        // Tipos de licencia únicos en este modelo
+                        $licTypes = collect($group['licenses'])
+                            ->pluck('licenseType')
+                            ->filter()
+                            ->unique()
+                            ->values()
+                            ->toArray();
                     @endphp
 
                     <button
@@ -264,6 +414,43 @@
                                     @endif
                                 </div>
                             </div>
+
+                            {{-- Tipos de licencia --}}
+                            @if(!empty($licTypes))
+                            <div class="flex flex-wrap gap-1 mt-3">
+                                @foreach(array_slice($licTypes, 0, 3) as $lt)
+                                <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-mono
+                                             bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
+                                    {{ $lt }}
+                                </span>
+                                @endforeach
+                                @if(count($licTypes) > 3)
+                                <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-mono
+                                             bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
+                                    +{{ count($licTypes) - 3 }}
+                                </span>
+                                @endif
+                            </div>
+                            @endif
+
+                            {{-- Próximo vencimiento --}}
+                            @if($soonestExpFmt)
+                            <div class="mt-2 flex items-center gap-1.5 px-2 py-1 rounded-lg {{ $expBadgeColor }}">
+                                <svg class="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                          d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                </svg>
+                                <div class="flex flex-col leading-tight">
+                                    <span class="text-[9px] font-bold uppercase tracking-wider opacity-70">Próx. vencimiento</span>
+                                    <span class="text-[10px] font-semibold">{{ $soonestExpFmt }}</span>
+                                </div>
+                                @if($soonestExpDays !== null)
+                                <span class="ml-auto text-[9px] font-bold">
+                                    {{ $soonestExpDays > 0 ? 'en ' . $soonestExpDays . 'd' : 'vencida' }}
+                                </span>
+                                @endif
+                            </div>
+                            @endif
                         </div>
                     </button>
                     @endforeach
@@ -356,10 +543,11 @@
                                 @php
                                     $lState = strtolower($license['state'] ?? '');
                                     $lColor = match($lState) {
-                                        'active'  => ['dot' => 'bg-green-400', 'text' => 'text-green-600 dark:text-green-400',  'label' => 'Activa'],
-                                        'expired' => ['dot' => 'bg-red-400',   'text' => 'text-red-600 dark:text-red-400',      'label' => 'Vencida'],
-                                        'unused'  => ['dot' => 'bg-blue-400',  'text' => 'text-blue-600 dark:text-blue-400',    'label' => 'Sin usar'],
-                                        default   => ['dot' => 'bg-gray-300',  'text' => 'text-gray-400',                       'label' => ucfirst($lState ?: '—')],
+                                        'active'    => ['dot' => 'bg-green-400',  'text' => 'text-green-600 dark:text-green-400',   'label' => 'Activa'],
+                                        'expiring'  => ['dot' => 'bg-orange-400', 'text' => 'text-orange-600 dark:text-orange-400', 'label' => 'Por vencer'],
+                                        'expired'   => ['dot' => 'bg-red-400',    'text' => 'text-red-600 dark:text-red-400',       'label' => 'Vencida'],
+                                        'unused'    => ['dot' => 'bg-blue-400',   'text' => 'text-blue-600 dark:text-blue-400',     'label' => 'Sin usar'],
+                                        default     => ['dot' => 'bg-gray-300',   'text' => 'text-gray-400',                        'label' => ucfirst($lState ?: '—')],
                                     };
                                     try {
                                         $lExp      = !empty($license['expirationDate']) ? \Carbon\Carbon::parse($license['expirationDate'])->format('d M Y') : null;
@@ -478,10 +666,11 @@
                                 @php
                                     $lState = strtolower($license['state'] ?? '');
                                     $lColor = match($lState) {
-                                        'active'  => ['dot' => 'bg-green-400', 'text' => 'text-green-600 dark:text-green-400',  'label' => 'Activa'],
-                                        'expired' => ['dot' => 'bg-red-400',   'text' => 'text-red-600 dark:text-red-400',      'label' => 'Vencida'],
-                                        'unused'  => ['dot' => 'bg-blue-400',  'text' => 'text-blue-600 dark:text-blue-400',    'label' => 'Sin usar'],
-                                        default   => ['dot' => 'bg-gray-300',  'text' => 'text-gray-400',                       'label' => ucfirst($lState)],
+                                        'active'    => ['dot' => 'bg-green-400',  'text' => 'text-green-600 dark:text-green-400',   'label' => 'Activa'],
+                                        'expiring'  => ['dot' => 'bg-orange-400', 'text' => 'text-orange-600 dark:text-orange-400', 'label' => 'Por vencer'],
+                                        'expired'   => ['dot' => 'bg-red-400',    'text' => 'text-red-600 dark:text-red-400',       'label' => 'Vencida'],
+                                        'unused'    => ['dot' => 'bg-blue-400',   'text' => 'text-blue-600 dark:text-blue-400',     'label' => 'Sin usar'],
+                                        default     => ['dot' => 'bg-gray-300',   'text' => 'text-gray-400',                        'label' => ucfirst($lState)],
                                     };
                                     $device = $license['_device'] ?? null;
                                     try {
@@ -552,6 +741,21 @@
             @endif
         </div>
     </div>
+
+    <script>
+    function orgDropdown() {
+        return {
+            open: false,
+            q: '',
+            init() {
+                this.$watch('open', v => {
+                    if (v) this.$nextTick(() => this.$refs.searchInput && this.$refs.searchInput.focus());
+                    else   this.q = '';
+                });
+            }
+        }
+    }
+    </script>
 
     @if(!empty($byModel))
     <script>

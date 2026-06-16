@@ -358,18 +358,23 @@ class MerakiController extends Controller
      * @return \Illuminate\View\View  Vista admin.meraki.licenses con: byModel, total, totalActive,
      *                                totalExpired, totalUnused
      */
-    public function licenses()
+    public function licenses(Request $request)
     {
         try {
             $organizations = $this->meraki->getOrganizations();
+            $selectedOrgId = $request->query('org');
 
             // Build serial → model map from cached devices
             $serialToModel = $this->deviceMapBySerial();
 
-            // Fetch all licenses from all orgs and attach model info
+            // Fetch licenses — all orgs or just the selected one
+            $orgsToQuery = $selectedOrgId
+                ? array_values(array_filter($organizations, fn ($o) => $o['id'] === $selectedOrgId))
+                : $organizations;
+
             $byModel = [];
 
-            foreach ($organizations as $org) {
+            foreach ($orgsToQuery as $org) {
                 try {
                     $licenses = $this->meraki->getLicenses($org['id']);
 
@@ -394,9 +399,9 @@ class MerakiController extends Controller
                         $byModel[$model]['licenses'][] = $license;
 
                         $state = strtolower($license['state'] ?? '');
-                        if ($state === 'active')       $byModel[$model]['active']++;
-                        elseif ($state === 'expired')  $byModel[$model]['expired']++;
-                        elseif ($state === 'unused')   $byModel[$model]['unused']++;
+                        if (in_array($state, ['active', 'expiring'])) $byModel[$model]['active']++;
+                        elseif ($state === 'expired')                  $byModel[$model]['expired']++;
+                        elseif ($state === 'unused')                   $byModel[$model]['unused']++;
                     }
 
                 } catch (Exception $e) {
@@ -414,14 +419,16 @@ class MerakiController extends Controller
         } catch (Exception $e) {
             Log::error('Meraki licenses: ' . $e->getMessage());
             return view('admin.meraki.licenses', [
-                'byModel' => [], 'total' => 0,
-                'totalActive' => 0, 'totalExpired' => 0, 'totalUnused' => 0,
-                'error' => $e->getMessage(),
+                'byModel'       => [], 'total' => 0,
+                'totalActive'   => 0, 'totalExpired' => 0, 'totalUnused' => 0,
+                'organizations' => [], 'selectedOrgId' => null,
+                'error'         => $e->getMessage(),
             ]);
         }
 
         return view('admin.meraki.licenses', compact(
-            'byModel', 'total', 'totalActive', 'totalExpired', 'totalUnused'
+            'byModel', 'total', 'totalActive', 'totalExpired', 'totalUnused',
+            'organizations', 'selectedOrgId'
         ));
     }
 

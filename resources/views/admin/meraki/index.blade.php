@@ -98,7 +98,7 @@
                         @php
                             $orgNamesLower = collect($organizations)->map(fn($o) => strtolower($o['name']))->values()->all();
                         @endphp
-                        <div class="max-h-72 overflow-y-auto py-1">
+                        <div class="overflow-y-auto py-1" style="max-height:18rem; overscroll-behavior:contain;">
                             @foreach($organizations as $org)
                             <a href="{{ route('admin.meraki.organization', $org['id']) }}"
                                x-show="!orgSearch || @js(strtolower($org['name'])).includes(orgSearch.toLowerCase())"
