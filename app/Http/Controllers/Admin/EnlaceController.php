@@ -113,6 +113,10 @@ class EnlaceController extends Controller
 
             Excel::import(new EnlacesCarrierImport($batch->id, $this->sheetNames($tempPath)), $tempPath);
 
+            // Eliminar circuitos de importaciones anteriores que ya no están en el Excel.
+            // El upsert actualiza batch_id en los registros vigentes; los huérfanos conservan el batch viejo.
+            EnlaceCarrier::where('batch_id', '!=', $batch->id)->delete();
+
             $total = EnlaceCarrier::where('batch_id', $batch->id)->count();
             $batch->update(['total_registros' => $total]);
 
@@ -286,6 +290,9 @@ class EnlaceController extends Controller
             ]);
 
             Excel::import(new EnlacesCarrierImport($batch->id, $this->sheetNames($tempPath)), $tempPath);
+
+            // Eliminar circuitos de importaciones anteriores que ya no están en el Excel.
+            EnlaceCarrier::where('batch_id', '!=', $batch->id)->delete();
 
             $total = EnlaceCarrier::where('batch_id', $batch->id)->count();
             $batch->update(['total_registros' => $total]);
