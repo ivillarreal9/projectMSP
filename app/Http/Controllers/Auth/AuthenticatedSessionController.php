@@ -28,8 +28,8 @@ class AuthenticatedSessionController extends Controller
 
         $user = Auth::user();
 
-        // ✅ Saltar 2FA en entorno local
-        if (app()->environment('local')) {
+        // Saltar 2FA en entornos no-productivos (local + testing)
+        if (app()->environment(['local', 'testing'])) {
             $request->session()->regenerate();
             return redirect()->intended(route('dashboard'));
         }

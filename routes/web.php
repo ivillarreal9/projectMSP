@@ -21,6 +21,7 @@ use App\Http\Controllers\Admin\SurveyTypeController;
 use App\Http\Controllers\Admin\SurveyController;
 use App\Http\Controllers\Admin\GlpiController;
 use App\Http\Controllers\Admin\MerakiController;
+use App\Http\Controllers\Admin\EnlaceController;
 use App\Http\Controllers\Auth\TwoFactorController;
 use App\Http\Controllers\Auth\MicrosoftAuthController;
 use App\Http\Controllers\Admin\SincronizarController;
@@ -190,6 +191,19 @@ Route::middleware(['auth', 'module:meraki'])
         Route::post('/{orgId}/refresh',                       [MerakiController::class, 'refresh'])->name('refresh');
         Route::get('/{orgId}/networks/{networkId}',           [MerakiController::class, 'network'])->name('network');
         Route::post('/{orgId}/networks/{networkId}/refresh',  [MerakiController::class, 'refreshNetwork'])->name('network.refresh');
+    });
+
+// ─── Control de Enlaces Carrier (módulo: enlaces) ─────────────────────────────
+Route::middleware(['auth', 'module:enlaces'])
+    ->prefix('admin/enlaces')
+    ->name('admin.enlaces.')
+    ->group(function () {
+        Route::get('/',                         [EnlaceController::class, 'index'])->name('index');
+        Route::get('/pdf',                       [EnlaceController::class, 'exportPdf'])->name('pdf');
+        Route::post('/auto-sync',                [EnlaceController::class, 'autoSync'])->name('auto-sync');
+        Route::post('/sync',                     [EnlaceController::class, 'sync'])->name('sync');
+        Route::post('/sharepoint/import',        [EnlaceController::class, 'sharepointImport'])->name('sharepoint.import');
+        Route::post('/batch/{batch}/refresh',    [EnlaceController::class, 'refreshBatch'])->name('batch.refresh');
     });
 
 // ─── Sincronizar ─────────────────────────────────────────────────────────────

@@ -105,4 +105,16 @@ return [
         'dark_color'  => '#2dd4bf',
         'dark_bg'     => 'rgba(15,118,110,.15)',
     ],
+
+    'enlaces' => [
+        'nombre'      => 'Control de Enlaces',
+        'descripcion' => 'Gestión de URLs y accesos',
+        'icon'        => 'fa-link',
+        'color'       => '#1d4ed8',
+        'bg'          => '#eff6ff',
+        'light_color' => '#1e40af',
+        'light_bg'    => '#dbeafe',
+        'dark_color'  => '#60a5fa',
+        'dark_bg'     => 'rgba(29,78,216,.15)',
+    ],
 ];

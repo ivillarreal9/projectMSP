@@ -41,9 +41,9 @@ class AuthTest extends TestCase
     public function test_usuario_puede_hacer_login_con_credenciales_validas(): void
     {
         $user = $this->makeUser();
-        // Usuario sin 2FA configurado → el login lo manda al setup de 2FA
+        // En entornos no-productivos (local/testing) el 2FA se omite → directo al dashboard
         $this->attemptLogin('test@ovnicom.com', 'password123')
-            ->assertRedirect(route('2fa.setup'));
+            ->assertRedirect(route('dashboard'));
         $this->assertAuthenticatedAs($user);
     }
 

@@ -183,14 +183,15 @@ class SharePointService
      * @return array Lista de archivos con name, size (KB), modified, download_url, item_id
      * @throws \RuntimeException si Graph API retorna error al listar los children del folder
      */
-    public function listExcelFiles(): array
+    public function listExcelFiles(?string $folderId = null): array
     {
+        $folder  = $folderId ?? $this->folderId;
         $token   = $this->getAccessToken();
         $siteId  = $this->getSiteId();
         $driveId = $this->getDriveId($siteId);
 
         $response = Http::withToken($token)
-            ->get("https://graph.microsoft.com/v1.0/sites/{$siteId}/drives/{$driveId}/items/{$this->folderId}/children");
+            ->get("https://graph.microsoft.com/v1.0/sites/{$siteId}/drives/{$driveId}/items/{$folder}/children");
 
         if (!$response->successful()) {
             throw new \RuntimeException('Error listando archivos: ' . $response->body());
@@ -221,14 +222,15 @@ class SharePointService
      * @return string           Ruta absoluta al archivo temporal descargado
      * @throws \RuntimeException si el archivo no existe en SharePoint
      */
-    public function downloadFileByName(string $filename): string
+    public function downloadFileByName(string $filename, ?string $folderId = null): string
     {
+        $folder  = $folderId ?? $this->folderId;
         $token   = $this->getAccessToken();
         $siteId  = $this->getSiteId();
         $driveId = $this->getDriveId($siteId);
 
         $response = Http::withToken($token)
-            ->get("https://graph.microsoft.com/v1.0/sites/{$siteId}/drives/{$driveId}/items/{$this->folderId}/children");
+            ->get("https://graph.microsoft.com/v1.0/sites/{$siteId}/drives/{$driveId}/items/{$folder}/children");
 
         $files = collect($response->json('value'));
         $file  = $files->firstWhere('name', $filename);
@@ -357,6 +359,112 @@ class SharePointService
             $contentResponse = Http::withToken($token)
                 ->get("https://graph.microsoft.com/v1.0/sites/{$siteId}/drives/{$driveId}/items/{$itemId}/content");
             $fileContent = $contentResponse->body();
+        } else {
+            $fileContent = Http::get($downloadUrl)->body();
+        }
+
+        $tempPath = storage_path('app/temp_' . time() . '_' . $filename);
+        file_put_contents($tempPath, $fileContent);
+
+        return $tempPath;
+    }
+
+    /**
+     * Lista archivos Excel desde una carpeta de un sitio SharePoint distinto al configurado.
+     *
+     * Útil para módulos que usan un site diferente al de MSP Reports.
+     * Accede por ruta dentro del drive raíz del site (no necesita folder_id de Graph API).
+     *
+     * Endpoint Graph: GET /sites/{host}:/{sitePath}/drive/root:/{folderPath}:/children
+     *
+     * @param  string $siteUrl    URL completa del sitio SharePoint (p.ej. https://tenant.sharepoint.com/sites/MiSitio)
+     * @param  string $folderPath Ruta de la carpeta dentro de la biblioteca de documentos (p.ej. "listado de enlaces- internacionales")
+     * @return array  Lista de archivos con name, size, modified, download_url, item_id
+     * @throws \RuntimeException si Graph API retorna error
+     */
+    public function listExcelFilesFromSite(string $siteUrl, string $folderPath): array
+    {
+        $token  = $this->getAccessToken();
+        $parsed = parse_url($siteUrl);
+        $host   = $parsed['host'] ?? '';
+        $path   = ltrim($parsed['path'] ?? '', '/');
+
+        // 1) Resolver el siteId del site de enlaces (Graph no permite anidar dos colon-paths).
+        $siteResp = Http::withToken($token)
+            ->get("https://graph.microsoft.com/v1.0/sites/{$host}:/{$path}");
+
+        if (!$siteResp->successful()) {
+            throw new \RuntimeException('Error obteniendo site de enlaces: ' . $siteResp->body());
+        }
+
+        $siteId = $siteResp->json('id');
+
+        // 2) Listar la carpeta por ruta dentro del drive por defecto (Documentos compartidos).
+        //    Se decodifica primero (por si el .env trae el valor URL-encoded copiado de la URL)
+        //    y luego se codifica cada segmento por separado para preservar los '/'.
+        $decodedPath = rawurldecode($folderPath);
+        $encodedPath = implode('/', array_map('rawurlencode', explode('/', $decodedPath)));
+
+        $response = Http::withToken($token)
+            ->get("https://graph.microsoft.com/v1.0/sites/{$siteId}/drive/root:/{$encodedPath}:/children");
+
+        if (!$response->successful()) {
+            throw new \RuntimeException('Error listando archivos de enlaces: ' . $response->body());
+        }
+
+        return collect($response->json('value'))
+            ->filter(fn($f) => str_ends_with(strtolower($f['name']), '.xlsx') ||
+                               str_ends_with(strtolower($f['name']), '.xls'))
+            ->map(fn($f) => [
+                'name'         => $f['name'],
+                'size'         => round($f['size'] / 1024, 1) . ' KB',
+                'modified'     => $f['lastModifiedDateTime'],
+                'download_url' => $f['@microsoft.graph.downloadUrl'] ?? null,
+                'item_id'      => $f['id'],
+            ])
+            ->values()
+            ->toArray();
+    }
+
+    /**
+     * Descarga un archivo por item_id desde un sitio SharePoint distinto al configurado.
+     *
+     * @param  string $itemId   ID del item en Graph API
+     * @param  string $filename Nombre del archivo (usado para el path del temporal)
+     * @param  string $siteUrl  URL completa del sitio propietario del item
+     * @return string           Ruta absoluta al archivo temporal descargado
+     */
+    public function downloadFileByIdFromSite(string $itemId, string $filename, string $siteUrl): string
+    {
+        $token  = $this->getAccessToken();
+        $parsed = parse_url($siteUrl);
+        $host   = $parsed['host'] ?? '';
+        $path   = ltrim($parsed['path'] ?? '', '/');
+
+        // Resolver siteId del site de enlaces
+        $siteResp = Http::withToken($token)
+            ->get("https://graph.microsoft.com/v1.0/sites/{$host}:/{$path}");
+
+        if (!$siteResp->successful()) {
+            throw new \RuntimeException('Error obteniendo site de enlaces: ' . $siteResp->body());
+        }
+
+        $siteId  = $siteResp->json('id');
+        $driveId = $this->getDriveId($siteId);
+
+        $response = Http::withToken($token)
+            ->get("https://graph.microsoft.com/v1.0/sites/{$siteId}/drives/{$driveId}/items/{$itemId}");
+
+        if (!$response->successful()) {
+            throw new \RuntimeException('Error obteniendo archivo: ' . $response->body());
+        }
+
+        $downloadUrl = $response->json('@microsoft.graph.downloadUrl');
+
+        if (empty($downloadUrl)) {
+            $fileContent = Http::withToken($token)
+                ->get("https://graph.microsoft.com/v1.0/sites/{$siteId}/drives/{$driveId}/items/{$itemId}/content")
+                ->body();
         } else {
             $fileContent = Http::get($downloadUrl)->body();
         }

@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\MspClientController;
 use App\Http\Controllers\Api\MspCustomerController;
 use App\Http\Controllers\Api\MspReportApiController;
 use App\Http\Controllers\Api\MspTicketsController;
+use App\Http\Controllers\Api\EnlaceApiController;
 
 // ── Auth — emitir / revocar Bearer tokens ────────────────────────────────────
 Route::middleware('throttle:3,15')
@@ -51,4 +52,12 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])
             ->whereNumber('vendedor_id');
         Route::get('/{vendedor_id}/year',  [CommissionsController::class, 'year'])
             ->whereNumber('vendedor_id');
+    });
+
+// ── Control de Enlaces ────────────────────────────────────────────────────────
+Route::middleware(['auth:sanctum', 'throttle:60,1'])
+    ->prefix('v1/enlaces')
+    ->group(function () {
+        Route::get('/',            [EnlaceApiController::class, 'index']);
+        Route::post('/by-country', [EnlaceApiController::class, 'byCountry']);
     });
