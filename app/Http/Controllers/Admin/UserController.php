@@ -51,7 +51,7 @@ class UserController extends Controller
      */
     public function index(Request $request)
     {
-        $roles = Role::orderBy('nombre')->get(); // ← esta línea faltaba
+        $roles = Role::orderBy('nombre')->get();
 
         $users = User::with('roleModel')
             ->when($request->search, fn($q) =>
@@ -62,9 +62,16 @@ class UserController extends Controller
                 $q->where('role_id', $request->role_id)
             )
             ->latest()
-            ->paginate(10);
+            ->paginate(15);
 
-        return view('admin.users.index', compact('users', 'roles'));
+        $stats = [
+            'total'      => User::count(),
+            'con_2fa'    => User::whereNotNull('two_factor_secret')->where('two_factor_confirmed', true)->count(),
+            'sin_2fa'    => User::where(fn($q) => $q->whereNull('two_factor_secret')->orWhere('two_factor_confirmed', false))->count(),
+            'verificados'=> User::whereNotNull('email_verified_at')->count(),
+        ];
+
+        return view('admin.users.index', compact('users', 'roles', 'stats'));
     }
 
     /**
