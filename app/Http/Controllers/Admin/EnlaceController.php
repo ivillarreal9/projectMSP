@@ -73,17 +73,12 @@ class EnlaceController extends Controller
             ->orderBy('cliente')
             ->get();
 
-        $batches = EnlaceBatch::withCount('enlaces')
-            ->orderByDesc('created_at')
-            ->take(10)
-            ->get();
-
         $stats = $this->statsFor($enlaces);
 
         $lastBatch = EnlaceBatch::latest()->first();
 
         return view('admin.enlaces.index', compact(
-            'enlaces', 'batches', 'stats', 'hasCredentials', 'hasFolder', 'lastBatch'
+            'enlaces', 'stats', 'hasCredentials', 'hasFolder', 'lastBatch'
         ));
     }
 

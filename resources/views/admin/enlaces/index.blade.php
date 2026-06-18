@@ -441,48 +441,6 @@
             </div>
             @endif
 
-            {{-- ── Historial de batches ─────────────────────────────────── --}}
-            @if($batches->count())
-            <div class="mt-8 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5">
-                <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-4 flex items-center gap-2">
-                    <svg class="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                    </svg>
-                    Historial de importaciones
-                </h3>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-sm">
-                        <thead>
-                            <tr class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide border-b dark:border-gray-600">
-                                <th class="pb-3 pr-4">Archivo</th>
-                                <th class="pb-3 pr-4">Referencia</th>
-                                <th class="pb-3 pr-4">Registros</th>
-                                <th class="pb-3">Fecha</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y dark:divide-gray-700">
-                            @foreach($batches as $batch)
-                            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30">
-                                <td class="py-3 pr-4 font-medium text-gray-700 dark:text-gray-300">
-                                    <svg class="w-4 h-4 text-green-600 inline mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                                    </svg>
-                                    {{ $batch->filename }}
-                                </td>
-                                <td class="py-3 pr-4">
-                                    <span class="text-xs bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded font-mono">
-                                        {{ $batch->referencia_tecnica }}
-                                    </span>
-                                </td>
-                                <td class="py-3 pr-4 text-gray-600 dark:text-gray-400">{{ number_format($batch->total_registros) }}</td>
-                                <td class="py-3 text-gray-400 text-xs">{{ $batch->created_at->format('d/m/Y H:i') }}</td>
-                            </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            @endif
 
         </div>
     </div>
