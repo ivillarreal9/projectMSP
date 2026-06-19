@@ -177,7 +177,7 @@ class MerakiLicensesExpiryNotifyCommand extends Command
         }
 
         $sendgridKey = config('services.sendgrid.api_key');
-        $fromEmail   = config('services.sendgrid.from', 'yalveo@ovni.com');
+        $fromEmail   = config('services.sendgrid.from', 'ivillarreal@ovni.com');
 
         if (empty($sendgridKey)) {
             $this->error('SENDGRID_API_KEY no configurado en .env');
