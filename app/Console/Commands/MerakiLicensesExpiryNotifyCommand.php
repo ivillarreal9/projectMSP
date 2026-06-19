@@ -2,13 +2,12 @@
 
 namespace App\Console\Commands;
 
-use App\Mail\MerakiLicensesExpiringMail;
 use App\Models\User;
 use App\Services\MerakiService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 
 class MerakiLicensesExpiryNotifyCommand extends Command
 {
@@ -163,6 +162,8 @@ class MerakiLicensesExpiryNotifyCommand extends Command
             return Command::FAILURE;
         }
 
+        $generatedAt = now()->format('d/m/Y H:i');
+
         if ($dryRun) {
             $this->info('--dry-run activo. Destinatarios: ' . implode(', ', $recipients));
             $rows = [];
@@ -175,19 +176,44 @@ class MerakiLicensesExpiryNotifyCommand extends Command
             return Command::SUCCESS;
         }
 
-        $mailable = new MerakiLicensesExpiringMail(
-            byOrg: $byOrg,
-            summary: $summary,
-            generatedAt: now()->format('d/m/Y H:i'),
-        );
+        $sendgridKey = config('services.sendgrid.api_key');
+        $fromEmail   = config('services.sendgrid.from', 'yalveo@ovni.com');
+
+        if (empty($sendgridKey)) {
+            $this->error('SENDGRID_API_KEY no configurado en .env');
+            Log::error('meraki:notify-licenses — SENDGRID_API_KEY vacío.');
+            return Command::FAILURE;
+        }
+
+        $subject = $summary['critical'] > 0
+            ? "⚠️ Meraki: {$summary['critical']} licencia(s) vencen en menos de 30 días"
+            : 'Meraki: Reporte de licencias próximas a vencer';
+
+        $html = view('emails.meraki-licenses-expiring', [
+            'byOrg'       => $byOrg,
+            'summary'     => $summary,
+            'generatedAt' => $generatedAt,
+        ])->render();
 
         foreach ($recipients as $email) {
-            try {
-                Mail::to($email)->send($mailable);
+            $payload = [
+                'personalizations' => [[
+                    'to'      => [['email' => $email]],
+                    'subject' => $subject,
+                ]],
+                'from'    => ['email' => $fromEmail, 'name' => config('app.name', 'Ovnicom Analytics')],
+                'subject' => $subject,
+                'content' => [['type' => 'text/html', 'value' => $html]],
+            ];
+
+            $response = Http::withToken($sendgridKey)
+                ->post('https://api.sendgrid.com/v3/mail/send', $payload);
+
+            if ($response->successful() || $response->status() === 202) {
                 $this->info("Correo enviado a: {$email}");
-            } catch (\Throwable $e) {
-                $this->error("Error enviando a {$email}: " . $e->getMessage());
-                Log::error("meraki:notify-licenses — fallo al enviar a {$email}: " . $e->getMessage());
+            } else {
+                $this->error("SendGrid error [{$email}]: " . $response->body());
+                Log::error("meraki:notify-licenses — SendGrid error [{$email}]: " . $response->body());
             }
         }
 
